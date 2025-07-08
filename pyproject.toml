@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "HedwigLab"
+version = "0.1.0"
+description = "Research note backup storage that syncs Notion to Git and generates AI summaries"
+authors = [{name = "Hyeshik Chang", email = "hyeshik@snu.ac.kr"}]
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Office/Business",
+    "Topic :: Text Processing :: Markup",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "click",
+    "requests",
+    "pandas",
+    "pytz",
+    "python-dateutil",
+    "pyyaml",
+    "notion-client",
+    "notion2md",
+    "tqdm",
+    "openai",
+    "tiktoken",
+    "python-dotenv",
+    "slack-sdk",
+]
+
+[project.scripts]
+hedwig = "Hedwig.cli:main"
+
+[tool.setuptools]
+packages = ["Hedwig"]

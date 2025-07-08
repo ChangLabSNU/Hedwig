@@ -1,0 +1,173 @@
+# Hedwig Configuration Example
+# Copy this file to config.yml and customize for your environment
+
+# ==============================================================================
+# PATHS - File and directory locations
+# ==============================================================================
+
+paths:
+  # Git repository where Notion pages are synced
+  notes_repository: /path/to/notes/repository
+
+  # Directory for generated summaries (YYYY/MM/YYYYMMDD-*.md structure)
+  change_summary_output: /path/to/change-summaries
+
+  # Checkpoint file to track last sync time
+  checkpoint_file: /path/to/notion-checkpoint.txt
+
+  # File containing blacklisted Notion page IDs (one per line)
+  blacklist_file: /path/to/blacklisted-pages.txt
+
+  # File to export user list (TSV format with user ID and name)
+  userlist_file: /path/to/user-list.tsv
+
+  # Optional: Override file for user list (TSV with same format)
+  # Users in this file will override/supplement those from Notion
+  # userlist_override_file: /path/to/user-override.tsv
+
+# ==============================================================================
+# NOTION SYNC - Synchronize Notion pages to Git repository
+# ==============================================================================
+
+sync:
+  # When checkpoint is missing, how many days to look back
+  default_lookback_days: 7
+
+  # Timezone for timestamps
+  timezone: Asia/Seoul
+
+  # Git commit message template
+  # Variables: {datetime}
+  git_commit_template: 'Automated commit: {datetime}'
+
+  # Markdown export settings
+  markdown:
+    # File path structure for exported pages
+    # Variables: {dump_dir}, {noteid}, {noteid_0}, {noteid_1}, {noteid_2}
+    dump_path_template: '{dump_dir}/{noteid_0}/{noteid_1}/{noteid_2}/{noteid}.md'
+
+    # Header added to each exported file
+    # Variables: {note[title]}, {path}, {note[last_edited_by]}, {note[last_edited_time]}
+    header_template: |
+      # {note[title]}
+      - Page Location: {path}
+      - Last Edited By: {note[last_edited_by]}
+      - Updated: {note[last_edited_time]}
+
+# ==============================================================================
+# LLM API - AI-powered summary generation
+# ==============================================================================
+
+api:
+  notion:
+    # Get your API key from https://www.notion.so/my-integrations
+    api_key: 'your-notion-api-key-here'
+
+    # API version and pagination settings
+    api_version: '2022-02-22'
+    page_size: 100
+
+  llm:
+    # API key (can also use environment variables: GEMINI_API_KEY or OPENAI_API_KEY)
+    # key: 'your-api-key-here'
+
+    # API endpoint (default is Google Gemini)
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+
+    # Models for different tasks
+    diff_summarization_model: 'gemini-2.5-flash'  # For individual changes
+    overview_model: 'gemini-2.5-pro'              # For team overviews
+
+    # Tokenizer for counting text length
+    tokenizer_encoding: 'o200k_base'
+
+    # Custom prompt for analyzing diffs (optional, has sensible default)
+    # diff_summary_prompt: |
+    #   Your custom prompt for diff analysis...
+
+    # Custom template for overview generation (optional, has sensible default)
+    # Variables: {summary_range}, {forthcoming_range}, {lab_info}, {language_instruction}
+    # overview_prompt_template: |
+    #   Your custom overview template...
+
+    # Weekday-specific overview configurations (optional)
+    # overview_weekday_config:
+    #   monday:
+    #     summary_range: 'last weekend'
+    #     forthcoming_range: 'this week'
+    #   tuesday:
+    #     summary_range: 'yesterday'
+    #     forthcoming_range: 'today'
+    #   # ... customize other days as needed
+
+# ==============================================================================
+# CHANGE SUMMARY - Generate AI summaries from Git diffs
+# ==============================================================================
+
+change_summary:
+  # Maximum characters of diff to process
+  max_diff_length: 12800
+
+  # Automatically sync user list when unknown UUIDs are found
+  # Set to false to disable automatic user list synchronization
+  auto_sync_userlist: true
+
+  # How far back to look for changes (days) by weekday
+  max_age_by_weekday:
+    monday: 2      # Covers weekend changes
+    tuesday: 1
+    wednesday: 1
+    thursday: 1
+    friday: 1
+    saturday: 1
+    sunday: 1
+
+# ==============================================================================
+# OVERVIEW - Generate team-focused summary from individual summaries
+# ==============================================================================
+
+overview:
+  # Output language: ko (Korean), en (English), ja (Japanese), zh_CN (Chinese)
+  language: ko
+
+  # Lab/team information for context
+  # lab_info: "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
+
+# ==============================================================================
+# MESSAGING - Send summaries to team communication platforms
+# ==============================================================================
+
+messaging:
+  # Active platform: slack (more platforms can be added)
+  active: slack
+
+  # Slack configuration
+  slack:
+    # Bot token (can also use SLACK_TOKEN environment variable)
+    # token: 'xoxb-your-slack-bot-token'
+
+    # Channel ID for posting
+    # channel_id: 'C12345678'
+
+    # Canvas title length limit
+    header_max_length: 150
+
+# ==============================================================================
+# PIPELINE - Automated summary generation and posting
+# ==============================================================================
+
+pipeline:
+  # Title format for posted summaries
+  # Variables: {date} - yesterday's date as YYYY-MM-DD
+  title_format: 'QBio Research {date}'
+
+# ==============================================================================
+# OUTPUT - Logging and display settings
+# ==============================================================================
+
+output:
+  # Suppress informational messages
+  quiet: false
+
+  # Show detailed debug information
+  verbose: false
