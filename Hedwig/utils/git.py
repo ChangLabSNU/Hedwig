@@ -80,11 +80,13 @@ class GitManager:
         Returns:
             Completed process result
         """
-        output = subprocess.DEVNULL if self.quiet else None
-        return subprocess.run(
-            command,
-            cwd=self.repo_path,
-            stdout=output,
-            stderr=output,
-            check=False
-        )
+        kwargs = {
+            'cwd': self.repo_path,
+            'check': False
+        }
+        
+        if self.quiet:
+            kwargs['stdout'] = subprocess.DEVNULL
+            kwargs['stderr'] = subprocess.DEVNULL
+            
+        return subprocess.run(command, **kwargs)
