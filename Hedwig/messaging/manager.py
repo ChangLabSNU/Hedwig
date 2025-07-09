@@ -32,15 +32,16 @@ from ..utils.logging import setup_logger
 class MessageManager:
     """Manage sending messages through configured consumers"""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
         """Initialize message manager
 
         Args:
             config_path: Path to configuration file
+            quiet: Suppress informational messages
         """
         self.config = Config(config_path)
         self.consumer = MessageConsumerFactory.create_from_config(self.config)
-        self.logger = setup_logger('Hedwig.messaging.manager')
+        self.logger = setup_logger('Hedwig.messaging.manager', quiet=quiet)
 
         if not self.consumer:
             self.logger.warning("No message consumer configured")

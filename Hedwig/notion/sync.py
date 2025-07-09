@@ -72,11 +72,8 @@ class NotionSyncer:
             header_template=self.config.get('sync.markdown.header_template', '# {note[title]}\n- Page Location: {path}\n- Last Edited By: {note[last_edited_by]}\n- Updated: {note[last_edited_time]}\n')
         )
 
-        # Git manager
-        self.git_manager = GitManager(
-            repo_path=self.config.get('paths.notes_repository'),
-            quiet=self.config.get('output.quiet', False)
-        )
+        # Git manager - will be initialized with quiet flag in sync()
+        self.git_repo_path = self.config.get('paths.notes_repository')
 
         # Timezone
         self.timezone = pytz.timezone(self.config.get('sync.timezone', 'UTC'))
@@ -88,9 +85,8 @@ class NotionSyncer:
             quiet: Suppress information messages and progress bar
             verbose: Enable verbose debug output
         """
-        # Override config with command line options
-        quiet = quiet or self.config.output.get('quiet', False)
-        verbose = verbose or self.config.output.get('verbose', False)
+        # Initialize git manager with quiet flag
+        self.git_manager = GitManager(repo_path=self.git_repo_path, quiet=quiet)
 
         # Set up logging
         logger = setup_logger('Hedwig.notion.sync', quiet, verbose)

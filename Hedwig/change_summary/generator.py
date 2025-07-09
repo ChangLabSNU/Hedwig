@@ -64,15 +64,16 @@ Format the summary as follows:
 **Important** Always respond in English, regardless of the language of the input research notes or diff content.
 """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
         """Initialize change summary generator
 
         Args:
             config_path: Path to configuration file
+            quiet: Suppress informational messages
         """
         self.config = Config(config_path)
-        self.logger = setup_logger('Hedwig.change_summary.generator',
-                                  quiet=self.config.get('output.quiet', False))
+        self.quiet = quiet
+        self.logger = setup_logger('Hedwig.change_summary.generator', quiet=quiet)
 
         # Load user lookup table
         self.user_lookup = self._load_user_lookup()
@@ -83,7 +84,7 @@ Format the summary as follows:
         self.llm_client = LLMClient(self.config)
         self.diff_analyzer = DiffAnalyzer(
             repo_path=self.config.get('paths.notes_repository', '/path/to/noterepo'),
-            quiet=self.config.get('output.quiet', False),
+            quiet=quiet,
             user_lookup=self.user_lookup,
             unknown_user_callback=self._handle_unknown_user
         )

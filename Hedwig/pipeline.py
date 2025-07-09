@@ -35,15 +35,16 @@ from .utils.logging import setup_logger
 class SummarizerPipeline:
     """Orchestrates the complete summarizer pipeline"""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
         """Initialize the summarizer pipeline
 
         Args:
             config_path: Path to configuration file
+            quiet: Suppress informational messages
         """
         self.config = Config(config_path)
-        self.logger = setup_logger('Hedwig.pipeline',
-                                  quiet=self.config.get('output.quiet', False))
+        self.quiet = quiet
+        self.logger = setup_logger('Hedwig.pipeline', quiet=quiet)
 
         # Get summary output directory
         self.summary_dir = Path(self.config.get('paths.change_summary_output', '/path/to/change-summaries'))
@@ -94,7 +95,7 @@ class SummarizerPipeline:
             self.logger.info("=" * 60)
 
             try:
-                change_generator = ChangeSummaryGenerator(self.config.config_path)
+                change_generator = ChangeSummaryGenerator(self.config.config_path, quiet=self.quiet)
                 summaries = change_generator.generate(write_to_file=True)
 
                 if not summaries:
@@ -117,7 +118,7 @@ class SummarizerPipeline:
             self.logger.info("=" * 60)
 
             try:
-                overview_generator = OverviewGenerator(self.config.config_path)
+                overview_generator = OverviewGenerator(self.config.config_path, quiet=self.quiet)
                 overview = overview_generator.generate(write_to_file=True)
 
                 if not overview:
@@ -138,7 +139,7 @@ class SummarizerPipeline:
             self.logger.info("=" * 60)
 
             try:
-                manager = MessageManager(self.config.config_path)
+                manager = MessageManager(self.config.config_path, quiet=self.quiet)
 
                 # Check if messaging is configured
                 if not manager.consumer_name:

@@ -77,15 +77,16 @@ When choosing the MVP, consider the impact in terms of biological significance a
         }
     }
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
         """Initialize overview generator
 
         Args:
             config_path: Path to configuration file
+            quiet: Suppress informational messages
         """
         self.config = Config(config_path)
-        self.logger = setup_logger('Hedwig.overview.generator',
-                                  quiet=self.config.get('output.quiet', False))
+        self.quiet = quiet
+        self.logger = setup_logger('Hedwig.overview.generator', quiet=quiet)
 
         # Initialize LLM client
         self.llm_client = LLMClient(self.config)

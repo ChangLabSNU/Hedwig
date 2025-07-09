@@ -161,13 +161,3 @@ pipeline:
   # Variables: {date} - yesterday's date as YYYY-MM-DD
   title_format: 'QBio Research {date}'
 
-# ==============================================================================
-# OUTPUT - Logging and display settings
-# ==============================================================================
-
-output:
-  # Suppress informational messages
-  quiet: false
-
-  # Show detailed debug information
-  verbose: false
