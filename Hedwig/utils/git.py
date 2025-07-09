@@ -50,7 +50,7 @@ class GitManager:
         Args:
             message: Commit message
         """
-        self._run_git_command(['git', 'commit', '-m', message])
+        self._run_git_command(['git', 'commit', '--no-gpg-sign', '-m', message])
 
     def _ensure_git_repo(self) -> None:
         """Ensure the repository path exists and is a git repository"""
