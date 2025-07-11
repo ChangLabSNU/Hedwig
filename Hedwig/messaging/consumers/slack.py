@@ -50,7 +50,8 @@ class SlackConsumer(MessageConsumer):
 
         # Initialize Slack client
         self.client = WebClient(token=self.token)
-        self.logger = setup_logger('Hedwig.messaging.slack')
+        quiet = self.config.get('quiet', False)
+        self.logger = setup_logger('Hedwig.messaging.slack', quiet=quiet)
 
         # Set default channel
         self.default_channel = self.config.get('channel_id')

@@ -37,12 +37,13 @@ class MessageConsumerFactory:
     }
 
     @classmethod
-    def create_consumer(cls, consumer_type: str, config: Dict[str, Any]) -> MessageConsumer:
+    def create_consumer(cls, consumer_type: str, config: Dict[str, Any], quiet: bool = False) -> MessageConsumer:
         """Create a message consumer instance
 
         Args:
             consumer_type: Type of consumer (e.g., 'slack')
             config: Configuration for the consumer
+            quiet: Suppress informational messages
 
         Returns:
             MessageConsumer instance
@@ -66,15 +67,20 @@ class MessageConsumerFactory:
         module = importlib.import_module(module_path)
         consumer_class = getattr(module, class_name)
 
+        # Add quiet flag to config
+        config_with_quiet = config.copy()
+        config_with_quiet['quiet'] = quiet
+
         # Create and return instance
-        return consumer_class(config)
+        return consumer_class(config_with_quiet)
 
     @classmethod
-    def create_from_config(cls, config: Config) -> Optional[MessageConsumer]:
+    def create_from_config(cls, config: Config, quiet: bool = False) -> Optional[MessageConsumer]:
         """Create a message consumer from configuration
 
         Args:
             config: Configuration object
+            quiet: Suppress informational messages
 
         Returns:
             MessageConsumer instance or None if messaging not configured
@@ -91,7 +97,7 @@ class MessageConsumerFactory:
         # Get consumer-specific config
         consumer_config = messaging_config.get(active_consumer, {})
 
-        return cls.create_consumer(active_consumer, consumer_config)
+        return cls.create_consumer(active_consumer, consumer_config, quiet=quiet)
 
     @classmethod
     def list_available_consumers(cls) -> List[str]:

@@ -40,7 +40,8 @@ class MessageManager:
             quiet: Suppress informational messages
         """
         self.config = Config(config_path)
-        self.consumer = MessageConsumerFactory.create_from_config(self.config)
+        self.quiet = quiet
+        self.consumer = MessageConsumerFactory.create_from_config(self.config, quiet=quiet)
         self.logger = setup_logger('Hedwig.messaging.manager', quiet=quiet)
 
         if not self.consumer:
