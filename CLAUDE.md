@@ -17,6 +17,14 @@ Copy `config.yml.example` to `config.yml` and update with your settings:
 
 ## Commands
 
+### Health Check
+```bash
+python -m hedwig health
+python -m hedwig health --quick  # Skip API connectivity tests
+python -m hedwig health --json   # Output as JSON for monitoring
+```
+Verifies all components are properly configured and operational. Recommended to run before first sync. Checks configuration, Git repository, dependencies, filesystem permissions, and API connectivity. Exit codes: 0=healthy, 1=degraded, 2=critical.
+
 ### Sync from Notion
 ```bash
 python -m hedwig sync
@@ -63,6 +71,9 @@ The pipeline stops gracefully if there are no changes to report or if it's a day
 ## Testing
 Before committing changes, run:
 ```bash
+# Health check to verify system integrity
+python -m hedwig health --config config.yml
+
 # Type checking (if mypy is configured)
 mypy hedwig/
 

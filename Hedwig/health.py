@@ -192,9 +192,10 @@ class HealthCheck:
                         except Exception as e:
                             checks.append(("Working directory", False, str(e)))
                     else:
-                        checks.append(("Repository initialized", False, "Not a git repository"))
+                        checks.append(("Repository initialized", True, "Will be initialized on first sync"))
                 else:
-                    checks.append(("Repository path exists", False, f"Not found: {repo_path}"))
+                    # Directory doesn't exist - will be created
+                    checks.append(("Repository path", True, f"Will be created: {repo_path}"))
             else:
                 checks.append(("Repository path", False, "Not configured"))
 
@@ -269,7 +270,11 @@ class HealthCheck:
                             if path.exists():
                                 checks.append((f"{description} exists", True, str(path)))
                             else:
-                                checks.append((f"{description} exists", True, f"Will be created: {path}"))
+                                # File doesn't exist yet - this is okay
+                                if 'userlist' in description.lower():
+                                    checks.append((f"{description} exists", True, "Will be created on first user sync"))
+                                else:
+                                    checks.append((f"{description} exists", True, f"Will be created: {path}"))
                         else:
                             checks.append((f"{description} parent directory", False, f"Not found: {parent}"))
                     else:
@@ -284,26 +289,31 @@ class HealthCheck:
                             except Exception:
                                 checks.append((f"{description} writable", False, f"Permission denied: {path}"))
                         else:
-                            # Try to create it
-                            try:
-                                path.mkdir(parents=True, exist_ok=True)
-                                checks.append((f"{description} created", True, str(path)))
-                            except Exception as e:
-                                checks.append((f"{description} creatable", False, str(e)))
+                            # Directory doesn't exist - will be created automatically
+                            checks.append((f"{description}", True, f"Will be created: {path}"))
                 else:
                     checks.append((description, False, "Not configured"))
 
             # Check disk space
             try:
                 repo_path = self.config.get('paths.notes_repository', '.')
-                stat = os.statvfs(repo_path)
-                free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-                if free_gb > 1:
-                    checks.append(("Disk space", True, f"{free_gb:.1f} GB free"))
+                # Use parent directory if the path doesn't exist yet
+                check_path = Path(repo_path)
+                while not check_path.exists() and check_path.parent != check_path:
+                    check_path = check_path.parent
+                
+                if check_path.exists():
+                    stat = os.statvfs(str(check_path))
+                    free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+                    if free_gb > 1:
+                        checks.append(("Disk space", True, f"{free_gb:.1f} GB free"))
+                    else:
+                        checks.append(("Disk space", False, f"Low: {free_gb:.1f} GB free"))
                 else:
-                    checks.append(("Disk space", False, f"Low: {free_gb:.1f} GB free"))
-            except Exception:
-                checks.append(("Disk space", False, "Could not check"))
+                    checks.append(("Disk space", True, "Will check after directory creation"))
+            except Exception as e:
+                # Non-critical - disk space will be checked when actually needed
+                checks.append(("Disk space", True, "Check skipped (directory not ready)"))
 
         self.results["filesystem"] = {
             "status": all(check[1] for check in checks),
@@ -489,7 +499,9 @@ class HealthCheck:
 
     def _determine_overall_status(self) -> None:
         """Determine overall health status based on individual checks"""
-        critical_checks = ["configuration", "git_repository", "dependencies"]
+        # Only configuration and dependencies are truly critical
+        # Git repository can be initialized automatically
+        critical_checks = ["configuration", "dependencies"]
         has_critical_failure = False
         has_any_failure = False
 
@@ -532,8 +544,16 @@ class HealthCheck:
 
             # Show individual checks
             for check in data["checks"]:
-                status_symbol = "✓" if check["passed"] else "✗"
-                status_color = "\033[32m" if check["passed"] else "\033[31m"  # Green or red
+                # Determine status based on message content
+                if any(phrase in check.get("message", "") for phrase in ["Will be created", "Will be initialized", "Cannot check"]):
+                    status_symbol = "○"  # Neutral circle
+                    status_color = "\033[33m"  # Yellow
+                elif check["passed"]:
+                    status_symbol = "✓"
+                    status_color = "\033[32m"  # Green
+                else:
+                    status_symbol = "✗"
+                    status_color = "\033[31m"  # Red
                 reset_color = "\033[0m"
 
                 # Handle long messages

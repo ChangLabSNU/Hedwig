@@ -48,12 +48,18 @@ pip install -e .
        token: 'your-slack-bot-token'
    ```
 
-3. **Sync Notion content**:
+3. **Check system health** (recommended before first sync):
+   ```bash
+   hedwig health --config config.yml
+   ```
+   This verifies that all components are properly configured and accessible.
+
+4. **Sync Notion content**:
    ```bash
    hedwig sync
    ```
 
-4. **Run the pipeline**:
+5. **Run the pipeline**:
    ```bash
    hedwig pipeline
    ```
@@ -99,6 +105,43 @@ Hedwig follows a two-stage process:
 **Important**: The `sync` command must be run before the pipeline to ensure the Git repository has the latest Notion content. The sync is NOT part of the pipeline and should be scheduled separately.
 
 ## Commands
+
+### `hedwig health`
+Checks the health of all Hedwig components and dependencies. **Recommended to run before first sync** to ensure proper setup.
+
+```bash
+hedwig health [--config CONFIG] [--quick] [--json] [--quiet]
+```
+
+**Options:**
+- `--config`: Configuration file path (default: `config.yml`)
+- `--quick`: Skip API connectivity tests for faster results
+- `--json`: Output results in JSON format for monitoring tools
+- `--quiet`: Suppress informational messages
+
+**Health Checks Include:**
+- Configuration file validity and required keys
+- Git repository status and permissions
+- Python package dependencies
+- Filesystem permissions and disk space
+- API connectivity (Notion, LLM, Slack) unless `--quick` is used
+
+**Exit Codes:**
+- `0`: All checks passed (HEALTHY)
+- `1`: Some non-critical checks failed (DEGRADED)
+- `2`: Critical checks failed (CRITICAL)
+
+**Example Usage:**
+```bash
+# Full health check before first sync
+hedwig health --config config.yml
+
+# Quick check (skip API tests)
+hedwig health --quick
+
+# JSON output for monitoring
+hedwig health --json | jq '.overall_status'
+```
 
 ### `hedwig sync`
 Synchronizes Notion pages to a Git repository.
@@ -289,10 +332,25 @@ overview:
 
 ### Common Issues
 
-1. **No summaries generated**: Check if there are recent commits within the lookback period
-2. **Sync failures**: Verify Notion API key and page permissions
-3. **LLM errors**: Check API key and rate limits
-4. **Messaging failures**: Verify bot token and channel permissions
+1. **Configuration problems**: Run `hedwig health` to diagnose configuration issues
+2. **No summaries generated**: Check if there are recent commits within the lookback period
+3. **Sync failures**: Verify Notion API key and page permissions
+4. **LLM errors**: Check API key and rate limits
+5. **Messaging failures**: Verify bot token and channel permissions
+
+### First-Time Setup Issues
+
+If you encounter problems during initial setup, run the health check:
+
+```bash
+hedwig health --config config.yml
+```
+
+This will identify:
+- Missing or invalid configuration
+- Permission issues
+- Missing dependencies
+- API connectivity problems
 
 ### Debug Mode
 
