@@ -57,7 +57,7 @@ def create_parser():
         help='Sync Notion content to Git repository'
     )
     sync_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -78,7 +78,7 @@ def create_parser():
         help='Sync user list from Notion to TSV file'
     )
     sync_userlist_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -94,7 +94,7 @@ def create_parser():
         help='Generate summaries for recent changes in research notes'
     )
     change_summary_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -115,7 +115,7 @@ def create_parser():
         help='Generate overview summary from individual change summaries'
     )
     overview_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -151,7 +151,7 @@ def create_parser():
         help='Title for the summary'
     )
     post_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -167,7 +167,7 @@ def create_parser():
         help='Run complete summarizer pipeline (change-summary -> overview -> post-summary)'
     )
     pipeline_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )
@@ -183,7 +183,7 @@ def create_parser():
         help='Check the health of Hedwig components'
     )
     health_parser.add_argument(
-        '--config',
+        '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
     )

@@ -72,8 +72,14 @@ class HealthCheck:
 
         # Always check these
         self._check_configuration()
-        self._check_git_repository()
         self._check_dependencies()
+
+        # Trigger auto-creation of missing resources if config is loaded
+        if self.config_loaded:
+            self._auto_create_resources()
+
+        # Check git and filesystem after auto-creation
+        self._check_git_repository()
         self._check_filesystem()
 
         # Skip API checks in quick mode
@@ -192,10 +198,10 @@ class HealthCheck:
                         except Exception as e:
                             checks.append(("Working directory", False, str(e)))
                     else:
-                        checks.append(("Repository initialized", True, "Will be initialized on first sync"))
+                        checks.append(("Repository initialized", False, "Not initialized"))
                 else:
-                    # Directory doesn't exist - will be created
-                    checks.append(("Repository path", True, f"Will be created: {repo_path}"))
+                    # Directory doesn't exist
+                    checks.append(("Repository path", False, f"Does not exist: {repo_path}"))
             else:
                 checks.append(("Repository path", False, "Not configured"))
 
@@ -270,11 +276,11 @@ class HealthCheck:
                             if path.exists():
                                 checks.append((f"{description} exists", True, str(path)))
                             else:
-                                # File doesn't exist yet - this is okay
+                                # File doesn't exist yet
                                 if 'userlist' in description.lower():
-                                    checks.append((f"{description} exists", True, "Will be created on first user sync"))
+                                    checks.append((f"{description} exists", False, "Not found"))
                                 else:
-                                    checks.append((f"{description} exists", True, f"Will be created: {path}"))
+                                    checks.append((f"{description} exists", False, f"Not found: {path}"))
                         else:
                             checks.append((f"{description} parent directory", False, f"Not found: {parent}"))
                     else:
@@ -289,8 +295,8 @@ class HealthCheck:
                             except Exception:
                                 checks.append((f"{description} writable", False, f"Permission denied: {path}"))
                         else:
-                            # Directory doesn't exist - will be created automatically
-                            checks.append((f"{description}", True, f"Will be created: {path}"))
+                            # Directory doesn't exist
+                            checks.append((f"{description}", False, f"Does not exist: {path}"))
                 else:
                     checks.append((description, False, "Not configured"))
 
@@ -301,7 +307,7 @@ class HealthCheck:
                 check_path = Path(repo_path)
                 while not check_path.exists() and check_path.parent != check_path:
                     check_path = check_path.parent
-                
+
                 if check_path.exists():
                     stat = os.statvfs(str(check_path))
                     free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
@@ -310,7 +316,7 @@ class HealthCheck:
                     else:
                         checks.append(("Disk space", False, f"Low: {free_gb:.1f} GB free"))
                 else:
-                    checks.append(("Disk space", True, "Will check after directory creation"))
+                    checks.append(("Disk space", True, "Cannot check (path not ready)"))
             except Exception as e:
                 # Non-critical - disk space will be checked when actually needed
                 checks.append(("Disk space", True, "Check skipped (directory not ready)"))
@@ -497,6 +503,42 @@ class HealthCheck:
             "checks": [{"name": c[0], "passed": c[1], "message": c[2]} for c in checks]
         }
 
+    def _auto_create_resources(self) -> None:
+        """Automatically create missing resources"""
+        self.logger.info("Checking for resources that need auto-creation...")
+
+        # 1. Git repository initialization
+        repo_path = self.config.get('paths.notes_repository')
+        if repo_path:
+            try:
+                from .utils.git import GitManager
+                # GitManager automatically creates directory and initializes repo
+                git_manager = GitManager(repo_path=repo_path, quiet=True)
+                self.logger.info(f"Ensured Git repository at: {repo_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Git repository: {e}")
+
+        # 2. Change summary output directory
+        summary_output = self.config.get('paths.change_summary_output')
+        if summary_output:
+            try:
+                Path(summary_output).mkdir(parents=True, exist_ok=True)
+                self.logger.info(f"Ensured summary output directory: {summary_output}")
+            except Exception as e:
+                self.logger.error(f"Failed to create summary output directory: {e}")
+
+        # 3. User list file
+        userlist_file = self.config.get('paths.userlist_file')
+        if userlist_file and not Path(userlist_file).exists():
+            try:
+                # Try to sync user list from Notion
+                from .notion.sync import NotionSyncer
+                syncer = NotionSyncer(config_path=str(self.config_path))
+                syncer.sync_userlist(quiet=True)
+                self.logger.info(f"Created user list file: {userlist_file}")
+            except Exception as e:
+                self.logger.error(f"Failed to create user list: {e}")
+
     def _determine_overall_status(self) -> None:
         """Determine overall health status based on individual checks"""
         # Only configuration and dependencies are truly critical
@@ -545,10 +587,7 @@ class HealthCheck:
             # Show individual checks
             for check in data["checks"]:
                 # Determine status based on message content
-                if any(phrase in check.get("message", "") for phrase in ["Will be created", "Will be initialized", "Cannot check"]):
-                    status_symbol = "○"  # Neutral circle
-                    status_color = "\033[33m"  # Yellow
-                elif check["passed"]:
+                if check["passed"]:
                     status_symbol = "✓"
                     status_color = "\033[32m"  # Green
                 else:
