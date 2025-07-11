@@ -177,6 +177,32 @@ def create_parser():
         help='Suppress information messages'
     )
 
+    # Health check
+    health_parser = subparsers.add_parser(
+        'health',
+        help='Check the health of Hedwig components'
+    )
+    health_parser.add_argument(
+        '--config',
+        default='config.yml',
+        help='Path to configuration file'
+    )
+    health_parser.add_argument(
+        '--quick',
+        action='store_true',
+        help='Skip API connectivity tests for faster results'
+    )
+    health_parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Output results as JSON'
+    )
+    health_parser.add_argument(
+        '--quiet',
+        action='store_true',
+        help='Suppress information messages'
+    )
+
     return parser
 
 
@@ -260,6 +286,27 @@ def handle_pipeline(args):
     sys.exit(0 if success else 1)
 
 
+def handle_health(args):
+    """Handle health check command"""
+    from .health import HealthCheck
+
+    checker = HealthCheck(config_path=args.config, quiet=args.quiet)
+    results = checker.check_all(quick=args.quick)
+
+    # Format and print results
+    output = checker.format_results(results, json_output=args.json)
+    print(output)
+
+    # Exit with appropriate code
+    status = results["overall_status"]
+    if status == "HEALTHY":
+        sys.exit(0)
+    elif status == "DEGRADED":
+        sys.exit(1)
+    else:  # CRITICAL
+        sys.exit(2)
+
+
 def main():
     """Main entry point for the hedwig command line tool"""
     parser = create_parser()
@@ -277,7 +324,8 @@ def main():
         'generate-change-summary': handle_generate_change_summary,
         'generate-overview': handle_generate_overview,
         'post-summary': handle_post_summary,
-        'pipeline': handle_pipeline
+        'pipeline': handle_pipeline,
+        'health': handle_health
     }
 
     # Execute the appropriate handler
