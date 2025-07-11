@@ -135,8 +135,8 @@ class SlackConsumer(MessageConsumer):
                 channel=channel_id,
                 text=content.notification_text,  # Fallback text
                 blocks=blocks,
-                unfurl_links=True,
-                unfurl_media=True
+                unfurl_links=False,
+                unfurl_media=False
             )
 
             if response.get("ok"):
