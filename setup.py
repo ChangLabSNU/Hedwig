@@ -24,7 +24,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="HedwigLab",
-    version="0.1.0",
+    version="0.9.0",
     description="Research note backup storage that syncs Notion to Git and generates AI summaries",
     author="Hyeshik Chang",
     author_email="hyeshik@snu.ac.kr",
@@ -51,7 +51,7 @@ setup(
     },
     python_requires='>=3.9',
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Information Analysis",
         "Topic :: Office/Business",

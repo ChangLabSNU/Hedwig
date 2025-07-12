@@ -13,13 +13,13 @@ Hedwig is a research note backup storage that synchronizes Notion content to Git
 
 ## Installation
 
-Install Hedwig using pip:
+Install Hedwig from PyPI:
 
 ```bash
-pip install -e /path/to/Hedwig
+pip install hedwiglab
 ```
 
-Or clone and install from source:
+Or install from source:
 
 ```bash
 git clone https://github.com/ChangLabSNU/Hedwig
@@ -31,7 +31,12 @@ pip install -e .
 
 1. **Set up configuration**:
    ```bash
+   # Download the example configuration
+   curl -O https://raw.githubusercontent.com/ChangLabSNU/Hedwig/refs/heads/main/config.yml.example
+
+   # Create your config file
    cp config.yml.example config.yml
+
    # Edit config.yml with your settings
    ```
 
@@ -233,7 +238,12 @@ hedwig pipeline [--config CONFIG]
 
 ## Configuration
 
-Hedwig uses a YAML configuration file. Copy `config.yml.example` to `config.yml` and customize:
+Hedwig uses a YAML configuration file. Download the example configuration and customize:
+
+```bash
+curl -O https://raw.githubusercontent.com/ChangLabSNU/Hedwig/refs/heads/main/config.yml.example
+cp config.yml.example config.yml
+```
 
 ### Essential Settings
 
