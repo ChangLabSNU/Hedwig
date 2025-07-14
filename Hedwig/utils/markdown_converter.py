@@ -23,123 +23,20 @@
 
 import re
 import json
-from typing import List, Dict, Any, Union, Tuple
+from typing import List, Dict, Any, Union, Tuple, Optional
 
 
-def markdown_to_slack_canvas(content: str) -> str:
-    """Convert Markdown to Slack Canvas format
+class MarkdownConverter:
+    """Converter for transforming Markdown to various Slack formats"""
 
-    Args:
-        content: Markdown formatted text
+    @staticmethod
+    def _is_divider(line: str) -> bool:
+        """Check if a line is a markdown horizontal rule/divider."""
+        stripped = line.strip()
+        return bool(re.match(r'^(---+|\*\*\*+|___+)$', stripped))
 
-    Returns:
-        Slack Canvas formatted text
-    """
-    # Split the input string into parts based on code blocks and inline code
-    parts = re.split(r"(?s)(```.+?```|`[^`\n]+?`)", content)
-
-    # Apply minimal formatting for canvas
-    result = ""
-    for part in parts:
-        if part.startswith("```") or part.startswith("`"):
-            result += part
-        else:
-            # Convert numbered lists to bullet lists
-            part = re.sub(r"(?m)^(\s*)\d+\.\s+(.*)", r"\1* \2", part)
-            result += part
-    return result
-
-
-def is_divider(line: str) -> bool:
-    """Check if a line is a markdown horizontal rule/divider."""
-    stripped = line.strip()
-    # Match --- or *** or ___ (3 or more of these characters)
-    return bool(re.match(r'^(---+|\*\*\*+|___+)$', stripped))
-
-
-def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -> Union[List[Dict[str, Any]], str]:
-    """
-    Convert Markdown text to Slack block format with proper divider handling.
-
-    Supports:
-    - Headings (# through ######)
-    - Bold text (**text** or __text__)
-    - Italic text (*text* or _text_)
-    - Bullet lists (lines starting with - or *)
-    - Inline code (`code`)
-    - Horizontal rules/dividers (---, ***, or ___)
-
-    Note: Slack's rich_text format has limited support for nested lists.
-    This converter will flatten nested lists and add indent markers.
-
-    When dividers are present, the content is split into separate rich_text blocks
-    with divider blocks placed at the top level between them.
-
-    Args:
-        markdown_text: The Markdown formatted text to convert
-        return_json: If True, returns JSON string; if False, returns list of blocks
-
-    Returns:
-        A list of Slack blocks or JSON string representing the blocks
-    """
-    lines = markdown_text.strip().split('\n')
-
-    # First pass: split content by dividers
-    content_segments = []
-    current_segment = []
-
-    for line in lines:
-        if is_divider(line):
-            if current_segment:
-                content_segments.append(current_segment)
-                current_segment = []
-            content_segments.append(['__DIVIDER__'])
-        else:
-            current_segment.append(line)
-
-    # Don't forget the last segment
-    if current_segment:
-        content_segments.append(current_segment)
-
-    # Process each segment
-    result_blocks = []
-
-    for segment in content_segments:
-        if segment == ['__DIVIDER__']:
-            # Add divider block
-            result_blocks.append({"type": "divider"})
-        else:
-            # Process as rich_text content
-            rich_text_elements = process_rich_text_segment(segment)
-            if rich_text_elements:
-                result_blocks.append({
-                    "type": "rich_text",
-                    "elements": rich_text_elements
-                })
-
-    # Return as JSON string if requested
-    if return_json:
-        return json.dumps(result_blocks)
-    else:
-        return result_blocks
-
-
-def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
-    """
-    Process a segment of lines (without dividers) into rich_text elements.
-
-    Args:
-        lines: List of markdown lines to process
-
-    Returns:
-        List of rich_text elements (sections, lists, etc.)
-    """
-    sections = []
-    current_paragraph = []
-    current_list_items = []
-    in_list = False
-
-    def parse_inline_formatting(text: str) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _parse_inline_formatting(text: str) -> List[Dict[str, Any]]:
         """Parse inline formatting (bold, italic, and code) in a text string."""
         elements = []
 
@@ -147,7 +44,6 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
         # - Bold: **text** or __text__
         # - Italic: *text* or _text_ (but not ** or __)
         # - Code: `text`
-        # Using negative lookahead/lookbehind to distinguish single from double markers
         pattern = r'(\*\*|__|(?<!\*)\*(?!\*)|(?<!_)_(?!_)|`)(.+?)\1'
         last_end = 0
 
@@ -213,22 +109,12 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
 
         return elements
 
-    def create_paragraph_section(lines: List[str]) -> Dict[str, Any]:
-        """Create a paragraph section from lines of text."""
-        combined_text = ' '.join(lines)
-        elements = parse_inline_formatting(combined_text)
-
-        return {
-            "type": "rich_text_section",
-            "elements": elements
-        }
-
-    def is_list_item(line: str) -> Tuple[bool, int, str]:
+    @staticmethod
+    def _is_list_item(line: str) -> Tuple[bool, int, str]:
         """
         Check if a line is a list item and return its properties.
         Returns (is_list_item, indent_level, content)
         """
-        # Match list item with optional indentation
         match = re.match(r'^(\s*)[-*]\s+(.*)$', line)
         if match:
             indent = match.group(1)
@@ -238,7 +124,19 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
             return True, indent_level, content
         return False, 0, line
 
-    def create_list_section(items: List[Tuple[int, str]]) -> List[Dict[str, Any]]:
+    @classmethod
+    def _create_paragraph_section(cls, lines: List[str]) -> Dict[str, Any]:
+        """Create a paragraph section from lines of text."""
+        combined_text = ' '.join(lines)
+        elements = cls._parse_inline_formatting(combined_text)
+
+        return {
+            "type": "rich_text_section",
+            "elements": elements
+        }
+
+    @classmethod
+    def _create_list_section(cls, items: List[Tuple[int, str]]) -> List[Dict[str, Any]]:
         """
         Create list sections from items with indentation levels.
         Returns a list of sections (lists at different indent levels).
@@ -260,7 +158,7 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
                 if current_level_items:
                     list_elements = []
                     for item_text in current_level_items:
-                        item_elements = parse_inline_formatting(item_text)
+                        item_elements = cls._parse_inline_formatting(item_text)
                         list_elements.append({
                             "type": "rich_text_section",
                             "elements": item_elements
@@ -285,7 +183,7 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
         if current_level_items:
             list_elements = []
             for item_text in current_level_items:
-                item_elements = parse_inline_formatting(item_text)
+                item_elements = cls._parse_inline_formatting(item_text)
                 list_elements.append({
                     "type": "rich_text_section",
                     "elements": item_elements
@@ -304,9 +202,9 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
 
         return result_sections
 
-    def create_heading_section(line: str) -> Dict[str, Any]:
+    @classmethod
+    def _create_heading_section(cls, line: str) -> Optional[Dict[str, Any]]:
         """Create a heading section from a markdown heading."""
-        # Match heading pattern and extract level and text
         match = re.match(r'^(#{1,6})\s+(.+)$', line)
         if not match:
             return None
@@ -314,7 +212,7 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
         heading_text = match.group(2).strip()
 
         # Parse inline formatting in the heading text
-        elements = parse_inline_formatting(heading_text)
+        elements = cls._parse_inline_formatting(heading_text)
 
         # Add bold style to all elements for heading emphasis
         for element in elements:
@@ -329,63 +227,170 @@ def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
             "elements": elements
         }
 
-    # Process each line
-    for line in lines:
-        # Check if this line is a heading
-        heading_match = re.match(r'^#{1,6}\s+', line)
+    @classmethod
+    def _process_rich_text_segment(cls, lines: List[str]) -> List[Dict[str, Any]]:
+        """
+        Process a segment of lines (without dividers) into rich_text elements.
 
-        # Check if this line is a list item
-        is_list, indent_level, content = is_list_item(line)
+        Args:
+            lines: List of markdown lines to process
 
-        if heading_match:
-            # Save any pending paragraph
-            if current_paragraph:
-                sections.append(create_paragraph_section(current_paragraph))
-                current_paragraph = []
+        Returns:
+            List of rich_text elements (sections, lists, etc.)
+        """
+        sections = []
+        current_paragraph = []
+        current_list_items = []
+        in_list = False
 
-            # Save any pending list
-            if current_list_items:
-                sections.extend(create_list_section(current_list_items))
-                current_list_items = []
-                in_list = False
+        # Process each line
+        for line in lines:
+            # Check if this line is a heading
+            heading_match = re.match(r'^#{1,6}\s+', line)
 
-            # Create and add the heading section
-            heading_section = create_heading_section(line)
-            if heading_section:
-                sections.append(heading_section)
+            # Check if this line is a list item
+            is_list, indent_level, content = cls._is_list_item(line)
 
-        elif is_list:
-            # Save any pending paragraph
-            if current_paragraph and not in_list:
-                sections.append(create_paragraph_section(current_paragraph))
-                current_paragraph = []
-
-            in_list = True
-            current_list_items.append((indent_level, content))
-
-        else:
-            # Save any pending list
-            if current_list_items:
-                sections.extend(create_list_section(current_list_items))
-                current_list_items = []
-                in_list = False
-
-            # Add to current paragraph if line is not empty
-            if line.strip():
-                current_paragraph.append(line)
-            else:
-                # Empty line - save current paragraph if any
+            if heading_match:
+                # Save any pending paragraph
                 if current_paragraph:
-                    sections.append(create_paragraph_section(current_paragraph))
+                    sections.append(cls._create_paragraph_section(current_paragraph))
                     current_paragraph = []
 
-    # Handle any remaining content
-    if current_list_items:
-        sections.extend(create_list_section(current_list_items))
-    elif current_paragraph:
-        sections.append(create_paragraph_section(current_paragraph))
+                # Save any pending list
+                if current_list_items:
+                    sections.extend(cls._create_list_section(current_list_items))
+                    current_list_items = []
+                    in_list = False
 
-    return sections
+                # Create and add the heading section
+                heading_section = cls._create_heading_section(line)
+                if heading_section:
+                    sections.append(heading_section)
+
+            elif is_list:
+                # Save any pending paragraph
+                if current_paragraph and not in_list:
+                    sections.append(cls._create_paragraph_section(current_paragraph))
+                    current_paragraph = []
+
+                in_list = True
+                current_list_items.append((indent_level, content))
+
+            else:
+                # Save any pending list
+                if current_list_items:
+                    sections.extend(cls._create_list_section(current_list_items))
+                    current_list_items = []
+                    in_list = False
+
+                # Add to current paragraph if line is not empty
+                if line.strip():
+                    current_paragraph.append(line)
+                else:
+                    # Empty line - save current paragraph if any
+                    if current_paragraph:
+                        sections.append(cls._create_paragraph_section(current_paragraph))
+                        current_paragraph = []
+
+        # Handle any remaining content
+        if current_list_items:
+            sections.extend(cls._create_list_section(current_list_items))
+        elif current_paragraph:
+            sections.append(cls._create_paragraph_section(current_paragraph))
+
+        return sections
+
+    @classmethod
+    def to_slack_canvas(cls, content: str) -> str:
+        """Convert Markdown to Slack Canvas format
+
+        Args:
+            content: Markdown formatted text
+
+        Returns:
+            Slack Canvas formatted text
+        """
+        # Split the input string into parts based on code blocks and inline code
+        parts = re.split(r"(?s)(```.+?```|`[^`\n]+?`)", content)
+
+        # Apply minimal formatting for canvas
+        result = ""
+        for part in parts:
+            if part.startswith("```") or part.startswith("`"):
+                result += part
+            else:
+                # Convert numbered lists to bullet lists
+                part = re.sub(r"(?m)^(\s*)\d+\.\s+(.*)", r"\1* \2", part)
+                result += part
+        return result
+
+    @classmethod
+    def to_slack_rich_text(cls, markdown_text: str, return_json: bool = False) -> Union[List[Dict[str, Any]], str]:
+        """
+        Convert Markdown text to Slack block format with proper divider handling.
+
+        Supports:
+        - Headings (# through ######)
+        - Bold text (**text** or __text__)
+        - Italic text (*text* or _text_)
+        - Bullet lists (lines starting with - or *)
+        - Inline code (`code`)
+        - Horizontal rules/dividers (---, ***, or ___)
+
+        Note: Slack's rich_text format has limited support for nested lists.
+        This converter will flatten nested lists and add indent markers.
+
+        When dividers are present, the content is split into separate rich_text blocks
+        with divider blocks placed at the top level between them.
+
+        Args:
+            markdown_text: The Markdown formatted text to convert
+            return_json: If True, returns JSON string; if False, returns list of blocks
+
+        Returns:
+            A list of Slack blocks or JSON string representing the blocks
+        """
+        lines = markdown_text.strip().split('\n')
+
+        # First pass: split content by dividers
+        content_segments = []
+        current_segment = []
+
+        for line in lines:
+            if cls._is_divider(line):
+                if current_segment:
+                    content_segments.append(current_segment)
+                    current_segment = []
+                content_segments.append(['__DIVIDER__'])
+            else:
+                current_segment.append(line)
+
+        # Don't forget the last segment
+        if current_segment:
+            content_segments.append(current_segment)
+
+        # Process each segment
+        result_blocks = []
+
+        for segment in content_segments:
+            if segment == ['__DIVIDER__']:
+                # Add divider block
+                result_blocks.append({"type": "divider"})
+            else:
+                # Process as rich_text content
+                rich_text_elements = cls._process_rich_text_segment(segment)
+                if rich_text_elements:
+                    result_blocks.append({
+                        "type": "rich_text",
+                        "elements": rich_text_elements
+                    })
+
+        # Return as JSON string if requested
+        if return_json:
+            return json.dumps(result_blocks)
+        else:
+            return result_blocks
 
 
 def limit_text_length(text: str, limit: int) -> str:
