@@ -22,7 +22,6 @@
 """Logging utilities for hedwig"""
 
 import logging
-from typing import Optional
 from tqdm import tqdm
 
 

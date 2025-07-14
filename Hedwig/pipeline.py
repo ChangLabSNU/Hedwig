@@ -146,7 +146,7 @@ class SummarizerPipeline:
                     self.logger.warning("No messaging platform configured. Skipping posting step.")
                     return True
 
-                self.logger.info(f"Posting with:")
+                self.logger.info("Posting with:")
                 self.logger.info(f"  summary-file: {individual_file}")
                 self.logger.info(f"  overview-file: {overview_file}")
                 self.logger.info(f"  title: {title}")

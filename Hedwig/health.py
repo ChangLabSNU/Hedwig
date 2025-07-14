@@ -26,7 +26,7 @@ import json
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, Optional, Any
 from datetime import datetime
 
 from .utils.config import Config
@@ -269,7 +269,7 @@ class HealthCheck:
                                 test_file.touch()
                                 test_file.unlink()
                                 checks.append((f"{description} directory writable", True, str(parent)))
-                            except Exception as e:
+                            except Exception:
                                 checks.append((f"{description} directory writable", False, f"Permission denied: {parent}"))
 
                             # Check if file exists (optional for some files)
@@ -317,7 +317,7 @@ class HealthCheck:
                         checks.append(("Disk space", False, f"Low: {free_gb:.1f} GB free"))
                 else:
                     checks.append(("Disk space", True, "Cannot check (path not ready)"))
-            except Exception as e:
+            except Exception:
                 # Non-critical - disk space will be checked when actually needed
                 checks.append(("Disk space", True, "Check skipped (directory not ready)"))
 
@@ -410,7 +410,7 @@ class HealthCheck:
 
                 # Check tokenizer
                 try:
-                    test_tokens = client.count_tokens("Hello, world!")
+                    client.count_tokens("Hello, world!")
                     checks.append(("Tokenizer", True, f"Working ({client.tokenizer.name})"))
                 except Exception:
                     checks.append(("Tokenizer", False, "Failed to initialize"))
@@ -513,7 +513,7 @@ class HealthCheck:
             try:
                 from .utils.git import GitManager
                 # GitManager automatically creates directory and initializes repo
-                git_manager = GitManager(repo_path=repo_path, quiet=True)
+                GitManager(repo_path=repo_path, quiet=True)
                 self.logger.info(f"Ensured Git repository at: {repo_path}")
             except Exception as e:
                 self.logger.error(f"Failed to initialize Git repository: {e}")

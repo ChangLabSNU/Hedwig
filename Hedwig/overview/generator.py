@@ -22,7 +22,6 @@
 """Main overview generation module for creating overview summaries"""
 
 import datetime
-import os
 from pathlib import Path
 from typing import Optional
 

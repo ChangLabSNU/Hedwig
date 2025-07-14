@@ -22,7 +22,6 @@
 """Git integration utilities"""
 
 import subprocess
-from typing import Optional
 from pathlib import Path
 
 
@@ -84,9 +83,9 @@ class GitManager:
             'cwd': self.repo_path,
             'check': False
         }
-        
+
         if self.quiet:
             kwargs['stdout'] = subprocess.DEVNULL
             kwargs['stderr'] = subprocess.DEVNULL
-            
+
         return subprocess.run(command, **kwargs)
