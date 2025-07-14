@@ -209,15 +209,18 @@ class NotionClient:
         return 'Untitled object ' + obj['id']
 
     @staticmethod
-    def load_blacklist(path: str) -> Set[str]:
+    def load_blacklist(path: Optional[str]) -> Set[str]:
         """Load blacklisted page IDs from file
 
         Args:
-            path: Path to blacklist file
+            path: Path to blacklist file (None if not configured)
 
         Returns:
             Set of blacklisted page IDs
         """
+        if path is None:
+            return set()
+        
         blacklist = set()
         try:
             with open(path, 'r') as f:
