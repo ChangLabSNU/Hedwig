@@ -30,6 +30,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime
 
 from .utils.config import Config
+from .utils.timezone import TimezoneManager
 from .utils.logging import setup_logger
 
 
@@ -92,7 +93,7 @@ class HealthCheck:
         self._determine_overall_status()
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": TimezoneManager.now_local(self.config).isoformat(),
             "overall_status": self.overall_status,
             "checks": self.results,
             "quick_mode": quick

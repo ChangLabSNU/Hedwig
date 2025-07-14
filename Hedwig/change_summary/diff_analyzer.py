@@ -27,6 +27,7 @@ from typing import List, Dict, Optional, Callable
 from pathlib import Path
 
 from ..utils.logging import setup_logger
+from ..utils.timezone import TimezoneManager
 
 
 class DiffAnalyzer:
@@ -57,7 +58,7 @@ class DiffAnalyzer:
             List of individual file diffs
         """
         # Calculate the cutoff time in UTC
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = TimezoneManager.now_utc()
         cutoff_time = now - datetime.timedelta(seconds=max_age_seconds)
         cutoff_time_str = cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')
 
@@ -240,7 +241,7 @@ class DiffAnalyzer:
             List of unique editor IDs/names
         """
         # Calculate the cutoff time in UTC
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = TimezoneManager.now_utc()
         cutoff_time = now - datetime.timedelta(seconds=max_age_seconds)
         cutoff_time_str = cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')
 

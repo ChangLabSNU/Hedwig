@@ -33,6 +33,7 @@ from tqdm import tqdm
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.git import GitManager
+from ..utils.timezone import TimezoneManager
 from .client import NotionClient
 from .exporter import MarkdownExporter
 
@@ -76,7 +77,7 @@ class NotionSyncer:
         self.git_repo_path = self.config.get('paths.notes_repository')
 
         # Timezone
-        self.timezone = pytz.timezone(self.config.get('sync.timezone', 'UTC'))
+        self.timezone = TimezoneManager.get_configured_timezone(self.config)
 
     def sync(self, quiet: bool = False, verbose: bool = False) -> None:
         """Run the synchronization process
@@ -90,7 +91,7 @@ class NotionSyncer:
 
         # Set up logging
         logger = setup_logger('Hedwig.notion.sync', quiet, verbose)
-        start_time = datetime.now(self.timezone)
+        start_time = TimezoneManager.now_local(self.config)
 
         # Load checkpoint
         checkpoint_file = self.config.get('paths.checkpoint_file')
@@ -131,7 +132,7 @@ class NotionSyncer:
         except (FileNotFoundError, ValueError):
             # Use default lookback days when checkpoint is missing
             default_lookback_days = self.config.get('sync.default_lookback_days', 7)
-            last_update = datetime.now(self.timezone) - pd.Timedelta(days=default_lookback_days)
+            last_update = TimezoneManager.now_local(self.config) - pd.Timedelta(days=default_lookback_days)
             logger.info(f'No checkpoint found. Looking back {default_lookback_days} days to {last_update}')
         return last_update
 
@@ -205,7 +206,7 @@ class NotionSyncer:
 
     def _commit_changes(self) -> None:
         """Commit changes to git"""
-        timestamp = pd.to_datetime('now').strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = TimezoneManager.format_local(self.config, '%Y-%m-%d %H:%M:%S')
         commit_message = self.config.get('sync.git_commit_template', 'Automated commit: {datetime}').format(datetime=timestamp)
 
         self.git_manager.add_all()

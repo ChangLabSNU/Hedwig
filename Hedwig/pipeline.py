@@ -30,6 +30,7 @@ from .overview.generator import OverviewGenerator
 from .messaging.manager import MessageManager
 from .utils.config import Config
 from .utils.logging import setup_logger
+from .utils.timezone import TimezoneManager
 
 
 class SummarizerPipeline:
@@ -58,7 +59,7 @@ class SummarizerPipeline:
         Returns:
             Tuple of (individual_file, overview_file, today_date)
         """
-        today = datetime.date.today()
+        today = TimezoneManager.get_local_date(self.config)
         year = today.strftime('%Y')
         month = today.strftime('%m')
         date_str = today.strftime('%Y%m%d')

@@ -29,6 +29,7 @@ import pandas as pd
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
+from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
 from .diff_analyzer import DiffAnalyzer
 
@@ -235,7 +236,7 @@ Format the summary as follows:
         weekday_config = self.config.get('change_summary.max_age_by_weekday', {})
 
         # Determine max age based on current weekday
-        current_weekday = datetime.datetime.now().weekday()
+        current_weekday = TimezoneManager.get_local_weekday(self.config)
         max_age_seconds = DiffAnalyzer.get_max_age_for_weekday(current_weekday, weekday_config)
         self.logger.info(f"Weekday: {current_weekday}, using max age: {max_age_seconds/3600:.1f} hours")
 
@@ -267,7 +268,7 @@ Format the summary as follows:
         Returns:
             Path to written file
         """
-        now = datetime.datetime.now()
+        now = TimezoneManager.now_local(self.config)
         year = now.strftime('%Y')
         month = now.strftime('%m')
         date_str = now.strftime('%Y%m%d')

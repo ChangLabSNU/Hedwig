@@ -26,15 +26,21 @@ paths:
   # userlist_override_file: /path/to/user-override.tsv
 
 # ==============================================================================
+# GLOBAL SETTINGS - System-wide configuration
+# ==============================================================================
+
+global:
+  # Timezone for all timestamp operations (except git which uses UTC)
+  # Used by summaries, health checks, pipeline, and sync operations
+  timezone: Asia/Seoul
+
+# ==============================================================================
 # NOTION SYNC - Synchronize Notion pages to Git repository
 # ==============================================================================
 
 sync:
   # When checkpoint is missing, how many days to look back
   default_lookback_days: 7
-
-  # Timezone for timestamps
-  timezone: Asia/Seoul
 
   # Git commit message template
   # Variables: {datetime}

@@ -27,6 +27,7 @@ from typing import Optional
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
+from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
 
 
@@ -157,7 +158,7 @@ When choosing the MVP, consider the impact in terms of biological significance a
         """
         self.logger.info("Starting overview generation...")
 
-        now = datetime.datetime.now()
+        now = TimezoneManager.now_local(self.config)
         year = now.strftime('%Y')
         month = now.strftime('%m')
         date_str = now.strftime('%Y%m%d')
@@ -190,7 +191,7 @@ When choosing the MVP, consider the impact in terms of biological significance a
         self.logger.info("Generating overview summary...")
 
         # Get the appropriate prompt for today
-        current_weekday = datetime.datetime.now().weekday()
+        current_weekday = TimezoneManager.get_local_weekday(self.config)
         selected_prompt = self.prompts[current_weekday]
 
         if not selected_prompt:
@@ -230,7 +231,7 @@ When choosing the MVP, consider the impact in terms of biological significance a
         Returns:
             Path to written file
         """
-        now = datetime.datetime.now()
+        now = TimezoneManager.now_local(self.config)
         year = now.strftime('%Y')
         month = now.strftime('%m')
 
