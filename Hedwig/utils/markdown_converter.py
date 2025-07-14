@@ -23,41 +23,7 @@
 
 import re
 import json
-from typing import List, Dict, Any, Union, Optional, Tuple
-
-
-def markdown_to_slack_mrkdwn(content: str) -> str:
-    """Convert Markdown to Slack mrkdwn format
-
-    Args:
-        content: Markdown formatted text
-
-    Returns:
-        Slack mrkdwn formatted text
-    """
-    # Split the input string into parts based on code blocks and inline code
-    parts = re.split(r"(?s)(```.+?```|`[^`\n]+?`)", content)
-
-    # Apply the bold, italic, and strikethrough formatting to text not within code
-    result = ""
-    for part in parts:
-        if part.startswith("```") or part.startswith("`"):
-            result += part
-        else:
-            for o, n in [
-                (r"\*\*\*(?!\s)([^\*\n]+?)(?<!\s)\*\*\*", r"_*\1*_"),  # ***bold italic*** to *_bold italic_*
-                (r"(?<![\*_])\*(?!\s)([^\*\n]+?)(?<!\s)\*(?![\*_])", r"_\1_"),  # *italic* to _italic_
-                (r"\*\*(?!\s)([^\*\n]+?)(?<!\s)\*\*", r"*\1*"),  # **bold** to *bold*
-                (r"__(?!\s)([^_\n]+?)(?<!\s)__", r"*\1*"),  # __bold__ to *bold*
-                (r"~~(?!\s)([^~\n]+?)(?<!\s)~~", r"~\1~"),  # ~~strike~~ to ~strike~
-                (r"(\n|^)# ([^\n]+)", r"\1\n :star: *\2*"),  # heading 1
-                (r"(\n|^)## ([^\n]+)", r"\1\n :arrow_forward: *\2*"),  # heading 2
-                (r"(\n|^)### ([^\n]+)", r"\1\n :point_right: *\2*"),  # heading 3
-                (r"(?m)^(\s*)\d+\.\s+(.*)", r"\1* \2"),  # numbered list to bullet list
-            ]:
-                part = re.sub(o, n, part)
-            result += part
-    return result
+from typing import List, Dict, Any, Union, Tuple
 
 
 def markdown_to_slack_canvas(content: str) -> str:
@@ -84,9 +50,16 @@ def markdown_to_slack_canvas(content: str) -> str:
     return result
 
 
-def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -> Union[Dict[str, Any], str]:
+def is_divider(line: str) -> bool:
+    """Check if a line is a markdown horizontal rule/divider."""
+    stripped = line.strip()
+    # Match --- or *** or ___ (3 or more of these characters)
+    return bool(re.match(r'^(---+|\*\*\*+|___+)$', stripped))
+
+
+def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -> Union[List[Dict[str, Any]], str]:
     """
-    Convert Markdown text to Slack rich_text block format.
+    Convert Markdown text to Slack block format with proper divider handling.
 
     Supports:
     - Headings (# through ######)
@@ -94,18 +67,73 @@ def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -
     - Italic text (*text* or _text_)
     - Bullet lists (lines starting with - or *)
     - Inline code (`code`)
+    - Horizontal rules/dividers (---, ***, or ___)
 
     Note: Slack's rich_text format has limited support for nested lists.
     This converter will flatten nested lists and add indent markers.
 
+    When dividers are present, the content is split into separate rich_text blocks
+    with divider blocks placed at the top level between them.
+
     Args:
         markdown_text: The Markdown formatted text to convert
-        return_json: If True, returns JSON string; if False, returns dict
+        return_json: If True, returns JSON string; if False, returns list of blocks
 
     Returns:
-        A dictionary or JSON string representing a Slack rich_text block
+        A list of Slack blocks or JSON string representing the blocks
     """
     lines = markdown_text.strip().split('\n')
+
+    # First pass: split content by dividers
+    content_segments = []
+    current_segment = []
+
+    for line in lines:
+        if is_divider(line):
+            if current_segment:
+                content_segments.append(current_segment)
+                current_segment = []
+            content_segments.append(['__DIVIDER__'])
+        else:
+            current_segment.append(line)
+
+    # Don't forget the last segment
+    if current_segment:
+        content_segments.append(current_segment)
+
+    # Process each segment
+    result_blocks = []
+
+    for segment in content_segments:
+        if segment == ['__DIVIDER__']:
+            # Add divider block
+            result_blocks.append({"type": "divider"})
+        else:
+            # Process as rich_text content
+            rich_text_elements = process_rich_text_segment(segment)
+            if rich_text_elements:
+                result_blocks.append({
+                    "type": "rich_text",
+                    "elements": rich_text_elements
+                })
+
+    # Return as JSON string if requested
+    if return_json:
+        return json.dumps(result_blocks)
+    else:
+        return result_blocks
+
+
+def process_rich_text_segment(lines: List[str]) -> List[Dict[str, Any]]:
+    """
+    Process a segment of lines (without dividers) into rich_text elements.
+
+    Args:
+        lines: List of markdown lines to process
+
+    Returns:
+        List of rich_text elements (sections, lists, etc.)
+    """
     sections = []
     current_paragraph = []
     current_list_items = []
@@ -302,7 +330,7 @@ def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -
         }
 
     # Process each line
-    for i, line in enumerate(lines):
+    for line in lines:
         # Check if this line is a heading
         heading_match = re.match(r'^#{1,6}\s+', line)
 
@@ -357,17 +385,7 @@ def markdown_to_slack_rich_text(markdown_text: str, return_json: bool = False) -
     elif current_paragraph:
         sections.append(create_paragraph_section(current_paragraph))
 
-    # Create the final rich_text block
-    result = {
-        "type": "rich_text",
-        "elements": sections
-    }
-
-    # Return as JSON string if requested (ensures proper boolean serialization)
-    if return_json:
-        return json.dumps(result)
-    else:
-        return result
+    return sections
 
 
 def limit_text_length(text: str, limit: int) -> str:

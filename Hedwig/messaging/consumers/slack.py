@@ -29,7 +29,6 @@ from slack_sdk.errors import SlackApiError
 
 from ..base import MessageConsumer, MessageContent, MessageResult
 from ...utils.markdown_converter import (
-    markdown_to_slack_mrkdwn,
     markdown_to_slack_canvas,
     markdown_to_slack_rich_text,
     limit_text_length
@@ -97,9 +96,6 @@ class SlackConsumer(MessageConsumer):
             )
 
         try:
-            # Convert markdown to Slack format
-            message_text = markdown_to_slack_mrkdwn(content.notification_text)
-
             # Build blocks
             blocks = [
                 {
@@ -108,9 +104,11 @@ class SlackConsumer(MessageConsumer):
                         'type': 'plain_text',
                         'text': limit_text_length(content.title, self.header_max_length)
                     }
-                },
-                markdown_to_slack_rich_text(message_text)
+                }
             ]
+
+            # Add markdown blocks (convert directly from markdown to rich_text)
+            blocks.extend(markdown_to_slack_rich_text(content.notification_text))
 
             # Add document link if present in metadata
             if content.metadata:
