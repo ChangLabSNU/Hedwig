@@ -7,6 +7,7 @@ Hedwig is a research note backup storage that synchronizes Notion content to Git
 - **Notion Synchronization**: Automatically sync research notes from Notion to a Git repository
 - **AI-Powered Summaries**: Generate intelligent summaries of research changes using LLMs
 - **Team Overviews**: Create consolidated team overviews with MVP highlights
+- **Context Plugins**: Add contextual information (weather, calendar events) to overview summaries
 - **Multi-Platform Messaging**: Distribute summaries through various messaging platforms (currently Slack)
 - **Automated Pipeline**: Run the complete workflow with a single command
 - **Flexible Configuration**: Customize prompts, models, and behavior through configuration
@@ -326,6 +327,10 @@ api:
 
     overview_prompt_template: |
       Your custom overview template with {summary_range} and {forthcoming_range}...
+    
+    # Customize how context information is introduced in the prompt
+    overview_context_information_prefix: |
+      Use the following context information minimally only at the appropriate places in the summary, and do not repeat the context information verbatim.
 ```
 
 ### Changing Language
@@ -336,6 +341,94 @@ Set overview language and customize instructions:
 overview:
   language: en  # Options: ko, en, ja, zh_CN
   lab_info: "Your Lab Name and Description"
+```
+
+### Context Plugins
+
+Context plugins provide additional contextual information in overview summaries. This helps the AI generate more relevant and timely summaries by providing context about current conditions.
+
+#### Weather Plugin
+
+Adds weather information to the overview prompt:
+
+```yaml
+overview:
+  context_plugins:
+    weather:
+      enabled: true
+      latitude: 37.5665      # Your location's latitude
+      longitude: 126.9780    # Your location's longitude
+      city_name: Seoul       # Display name for the location
+```
+
+The weather plugin fetches data from Open-Meteo API and includes:
+- Yesterday's weather
+- Today's weather
+- Tomorrow's weather forecast
+
+#### Calendar Plugin
+
+Adds calendar events to provide context about holidays, meetings, or important dates:
+
+```yaml
+overview:
+  context_plugins:
+    calendar:
+      enabled: true
+      days_before: 1  # Include events from 1 day ago (0 = today only)
+      days_after: 7   # Include events up to 7 days ahead
+      calendars:
+        # iCal example (public calendars)
+        - name: Korean Holidays
+          type: ical
+          url: https://calendar.google.com/calendar/ical/ko.south_korea%23holiday%40group.v.calendar.google.com/public/basic.ics
+          enabled: true
+        
+        # CalDAV example (private calendars, requires authentication)
+        - name: Team Calendar
+          type: caldav
+          url: https://nextcloud.example.com/remote.php/dav/
+          username: your-username  # Or use env var CALDAV_USERNAME
+          password: your-password  # Or use env var CALDAV_PASSWORD
+          calendar_url: https://nextcloud.example.com/remote.php/dav/calendars/user/personal/  # Optional
+          enabled: true
+```
+
+**Features:**
+- Supports both iCal (public) and CalDAV (private) calendars
+- Multiple calendars can be configured
+- Events are grouped by time periods (today, this week, next week, later)
+- Calendars with no events are automatically suppressed from output
+- CalDAV requires `pip install caldav` for authentication support
+
+#### Custom Context Plugins
+
+You can create custom context plugins by:
+
+1. Creating a new Python file in `Hedwig/overview/context_plugins/`
+2. Inheriting from `ContextPlugin` base class
+3. Implementing the required methods:
+   - `name` property: Unique identifier for your plugin
+   - `get_context()` method: Returns the context string or None
+
+Example custom plugin structure:
+```python
+from .base import ContextPlugin
+from .registry import ContextPluginRegistry
+
+class MyCustomPlugin(ContextPlugin):
+    @property
+    def name(self) -> str:
+        return "custom"
+    
+    def get_context(self) -> Optional[str]:
+        if not self.is_enabled():
+            return None
+        # Your logic here
+        return "Your context information"
+
+# Register the plugin
+ContextPluginRegistry.register("custom", MyCustomPlugin)
 ```
 
 ## Troubleshooting
