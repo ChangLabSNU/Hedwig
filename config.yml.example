@@ -149,8 +149,8 @@ overview:
     # Weather context plugin - adds weather information
     weather:
       enabled: false  # Set to true to enable weather context
-      latitude: 37.5665  # Seoul latitude (example)
-      longitude: 126.9780  # Seoul longitude (example)
+      latitude: 37.4582  # Seoul latitude (example)
+      longitude: 126.9480  # Seoul longitude (example)
       city_name: Seoul  # City name for display
 
     # Calendar context plugin - adds calendar events information
