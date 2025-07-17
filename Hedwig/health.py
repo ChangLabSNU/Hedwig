@@ -27,7 +27,7 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .utils.config import Config
 from .utils.timezone import TimezoneManager
@@ -77,23 +77,73 @@ class HealthCheck:
 
         # Trigger auto-creation of missing resources if config is loaded
         if self.config_loaded:
-            self._auto_create_resources()
+            try:
+                self._auto_create_resources()
+            except Exception as e:
+                self.logger.warning(f"Auto-creation failed: {e}")
 
         # Check git and filesystem after auto-creation
-        self._check_git_repository()
-        self._check_filesystem()
+        try:
+            self._check_git_repository()
+        except Exception as e:
+            self.logger.error(f"Git repository check failed: {e}")
+            self.results["git_repository"] = {
+                "status": False,
+                "checks": [{"name": "Git check", "passed": False, "message": f"Check failed: {e}"}]
+            }
+
+        try:
+            self._check_filesystem()
+        except Exception as e:
+            self.logger.error(f"Filesystem check failed: {e}")
+            self.results["filesystem"] = {
+                "status": False,
+                "checks": [{"name": "Filesystem check", "passed": False, "message": f"Check failed: {e}"}]
+            }
 
         # Skip API checks in quick mode
         if not quick and self.config_loaded:
-            self._check_notion_api()
-            self._check_llm_api()
-            self._check_slack_api()
+            try:
+                self._check_notion_api()
+            except Exception as e:
+                self.logger.error(f"Notion API check failed: {e}")
+                self.results["notion_api"] = {
+                    "status": False,
+                    "checks": [{"name": "Notion API check", "passed": False, "message": f"Check failed: {e}"}]
+                }
+
+            try:
+                self._check_llm_api()
+            except Exception as e:
+                self.logger.error(f"LLM API check failed: {e}")
+                self.results["llm_api"] = {
+                    "status": False,
+                    "checks": [{"name": "LLM API check", "passed": False, "message": f"Check failed: {e}"}]
+                }
+
+            try:
+                self._check_slack_api()
+            except Exception as e:
+                self.logger.error(f"Slack API check failed: {e}")
+                self.results["slack_api"] = {
+                    "status": False,
+                    "checks": [{"name": "Slack API check", "passed": False, "message": f"Check failed: {e}"}]
+                }
 
         # Determine overall status
         self._determine_overall_status()
 
+        # Get timestamp safely - fallback to UTC if config has issues
+        try:
+            if self.config_loaded:
+                timestamp = TimezoneManager.now_local(self.config).isoformat()
+            else:
+                timestamp = datetime.now(timezone.utc).isoformat()
+        except Exception:
+            timestamp = datetime.now(timezone.utc).isoformat()
+
         return {
-            "timestamp": TimezoneManager.now_local(self.config).isoformat(),
+            "timestamp": timestamp,
             "overall_status": self.overall_status,
             "checks": self.results,
             "quick_mode": quick
@@ -117,34 +167,40 @@ class HealthCheck:
         if self.config_loaded:
             checks.append(("Config loaded", True, "Valid YAML"))
 
+            # Run comprehensive configuration validation
+            try:
+                validation_issues = self.config.validate_config()
+
+                # Count issues by severity
+                error_count = sum(1 for severity, _ in validation_issues if severity == 'error')
+                warning_count = sum(1 for severity, _ in validation_issues if severity == 'warning')
+                info_count = sum(1 for severity, _ in validation_issues if severity == 'info')
+
+                if error_count == 0:
+                    checks.append(("Configuration validation", True, f"{warning_count} warnings, {info_count} info"))
+                else:
+                    checks.append(("Configuration validation", False, f"{error_count} errors, {warning_count} warnings"))
+
+                # Add specific validation issues as individual checks
+                for severity, message in validation_issues:
+                    if severity == 'error':
+                        checks.append(("Config validation", False, message))
+                    elif severity == 'warning':
+                        checks.append(("Config validation", True, f"Warning: {message}"))
+                    # Info messages are not shown as individual checks to avoid clutter
+
+            except Exception as e:
+                checks.append(("Configuration validation", False, f"Validation failed: {e}"))
+
+            # Legacy checks for backward compatibility (now supplemented by validation)
             # Check required sections
-            required_sections = ['api', 'paths', 'sync']
+            required_sections = ['api', 'paths', 'global']
             for section in required_sections:
                 if section in self.config.data:
                     checks.append((f"Section '{section}'", True, "Present"))
                 else:
                     checks.append((f"Section '{section}'", False, "Missing"))
 
-            # Check specific required keys
-            required_keys = [
-                ('api.notion.api_key', 'Notion API key'),
-                ('api.llm.key', 'LLM API key'),
-                ('api.llm.diff_summarization_model', 'LLM model'),
-                ('paths.notes_repository', 'Repository path'),
-                ('sync.default_lookback_days', 'Default lookback days')
-            ]
-
-            for key, description in required_keys:
-                value = self.config.get(key)
-                if value:
-                    # Hide sensitive values
-                    if 'key' in key.lower() or 'token' in key.lower():
-                        display_value = f"***{str(value)[-4:]}" if len(str(value)) > 4 else "****"
-                    else:
-                        display_value = str(value)
-                    checks.append((description, True, display_value))
-                else:
-                    checks.append((description, False, "Not configured"))
         else:
             checks.append(("Config loaded", False, "Failed to load"))
 

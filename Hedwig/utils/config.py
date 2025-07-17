@@ -21,9 +21,11 @@
 
 """Configuration management for Hedwig"""
 
+import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
+import pytz
 
 
 class Config:
@@ -123,3 +125,203 @@ class Config:
     def git(self) -> Dict[str, Any]:
         """Get git configuration section"""
         return self.data.get('git', {})
+
+    def validate_config(self) -> List[Tuple[str, str]]:
+        """Validate configuration and return list of issues
+
+        Returns:
+            List of (severity, message) tuples where severity is 'error', 'warning', or 'info'
+        """
+        issues = []
+
+        # Validate required sections
+        issues.extend(self._validate_paths())
+        issues.extend(self._validate_global_settings())
+        issues.extend(self._validate_api_config())
+        issues.extend(self._validate_messaging_config())
+        issues.extend(self._validate_change_summary_config())
+        issues.extend(self._validate_overview_config())
+
+        return issues
+
+    def _validate_paths(self) -> List[Tuple[str, str]]:
+        """Validate paths configuration"""
+        issues = []
+        paths = self.data.get('paths', {})
+
+        if not paths:
+            issues.append(('error', 'Missing required section: paths'))
+            return issues
+
+        # Required paths
+        required_paths = {
+            'notes_repository': 'Git repository for Notion pages',
+            'change_summary_output': 'Directory for generated summaries',
+            'checkpoint_file': 'Checkpoint file for sync tracking'
+        }
+
+        for path_key, description in required_paths.items():
+            path_value = paths.get(path_key)
+            if not path_value:
+                issues.append(('error', f'Missing required path: {path_key} ({description})'))
+            elif isinstance(path_value, str):
+                path_obj = Path(path_value)
+                if path_key == 'notes_repository':
+                    if not path_obj.exists():
+                        issues.append(('warning', f'Notes repository path does not exist: {path_value}'))
+                    elif not (path_obj / '.git').exists():
+                        issues.append(('warning', f'Notes repository is not a git repository: {path_value}'))
+                elif path_key == 'change_summary_output':
+                    parent_dir = path_obj.parent
+                    if not parent_dir.exists():
+                        issues.append(('warning', f'Parent directory for change_summary_output does not exist: {parent_dir}'))
+                elif path_key == 'checkpoint_file':
+                    parent_dir = path_obj.parent
+                    if not parent_dir.exists():
+                        issues.append(('warning', f'Parent directory for checkpoint_file does not exist: {parent_dir}'))
+
+        # Optional paths validation
+        optional_paths = ['blacklist_file', 'userlist_file', 'userlist_override_file']
+        for path_key in optional_paths:
+            path_value = paths.get(path_key)
+            if path_value and isinstance(path_value, str):
+                path_obj = Path(path_value)
+                parent_dir = path_obj.parent
+                if not parent_dir.exists():
+                    issues.append(('warning', f'Parent directory for {path_key} does not exist: {parent_dir}'))
+
+        return issues
+
+    def _validate_global_settings(self) -> List[Tuple[str, str]]:
+        """Validate global settings"""
+        issues = []
+        global_config = self.data.get('global', {})
+
+        if not global_config:
+            issues.append(('error', 'Missing required section: global'))
+            return issues
+
+        # Validate timezone
+        timezone = global_config.get('timezone')
+        if not timezone:
+            issues.append(('error', 'Missing required setting: global.timezone'))
+        else:
+            try:
+                pytz.timezone(timezone)
+            except pytz.UnknownTimeZoneError:
+                issues.append(('error', f'Invalid timezone: {timezone}. Use a valid timezone like "Asia/Seoul"'))
+
+        return issues
+
+    def _validate_api_config(self) -> List[Tuple[str, str]]:
+        """Validate API configuration"""
+        issues = []
+        api_config = self.data.get('api', {})
+
+        if not api_config:
+            issues.append(('error', 'Missing required section: api'))
+            return issues
+
+        # Validate Notion API
+        notion_config = api_config.get('notion', {})
+        if not notion_config:
+            issues.append(('error', 'Missing required section: api.notion'))
+        else:
+            api_key = notion_config.get('api_key')
+            if not api_key:
+                # Check environment variable
+                if not os.getenv('NOTION_API_KEY'):
+                    issues.append(('error', 'Missing Notion API key. Set api.notion.api_key in config or NOTION_API_KEY environment variable'))
+            elif not api_key.startswith('secret_'):
+                issues.append(('warning', 'Notion API key should start with "secret_"'))
+
+        # Validate LLM API
+        llm_config = api_config.get('llm', {})
+        if not llm_config:
+            issues.append(('error', 'Missing required section: api.llm'))
+        else:
+            # Check for API key in config or environment
+            api_key = llm_config.get('key')
+            has_env_key = os.getenv('GEMINI_API_KEY') or os.getenv('OPENAI_API_KEY')
+            if not api_key and not has_env_key:
+                issues.append(('error', 'Missing LLM API key. Set api.llm.key in config or GEMINI_API_KEY/OPENAI_API_KEY environment variable'))
+
+            # Validate models
+            diff_model = llm_config.get('diff_summarization_model')
+            overview_model = llm_config.get('overview_model')
+            if not diff_model:
+                issues.append(('warning', 'Missing api.llm.diff_summarization_model, using default'))
+            if not overview_model:
+                issues.append(('warning', 'Missing api.llm.overview_model, using default'))
+
+        return issues
+
+    def _validate_messaging_config(self) -> List[Tuple[str, str]]:
+        """Validate messaging configuration"""
+        issues = []
+        messaging_config = self.data.get('messaging', {})
+
+        if not messaging_config:
+            issues.append(('info', 'No messaging configuration found. Summary posting will be skipped.'))
+            return issues
+
+        active_platform = messaging_config.get('active')
+        if not active_platform:
+            issues.append(('warning', 'No active messaging platform specified'))
+            return issues
+
+        # Validate Slack configuration if active
+        if active_platform == 'slack':
+            slack_config = messaging_config.get('slack', {})
+            if not slack_config:
+                issues.append(('error', 'Slack is active but messaging.slack section is missing'))
+            else:
+                token = slack_config.get('token')
+                if not token:
+                    if not os.getenv('SLACK_TOKEN'):
+                        issues.append(('error', 'Missing Slack token. Set messaging.slack.token in config or SLACK_TOKEN environment variable'))
+                elif not token.startswith(('xoxb-', 'xoxp-')):
+                    issues.append(('warning', 'Slack token should start with "xoxb-" or "xoxp-"'))
+
+                channel_id = slack_config.get('channel_id')
+                if not channel_id:
+                    issues.append(('warning', 'Missing messaging.slack.channel_id. You will need to specify channel when posting.'))
+        else:
+            issues.append(('warning', f'Unknown messaging platform: {active_platform}. Only "slack" is currently supported.'))
+
+        return issues
+
+    def _validate_change_summary_config(self) -> List[Tuple[str, str]]:
+        """Validate change summary configuration"""
+        issues = []
+        change_summary_config = self.data.get('change_summary', {})
+
+        # Validate max_age_by_weekday
+        weekday_config = change_summary_config.get('max_age_by_weekday', {})
+        if weekday_config:
+            valid_weekdays = {'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
+            for weekday, days in weekday_config.items():
+                if weekday not in valid_weekdays:
+                    issues.append(('warning', f'Invalid weekday in max_age_by_weekday: {weekday}'))
+                elif not isinstance(days, (int, float)) or days <= 0:
+                    issues.append(('warning', f'Invalid max_age value for {weekday}: {days}. Should be a positive number.'))
+
+        # Validate max_diff_length
+        max_diff_length = change_summary_config.get('max_diff_length')
+        if max_diff_length is not None and (not isinstance(max_diff_length, int) or max_diff_length <= 0):
+            issues.append(('warning', f'Invalid max_diff_length: {max_diff_length}. Should be a positive integer.'))
+
+        return issues
+
+    def _validate_overview_config(self) -> List[Tuple[str, str]]:
+        """Validate overview configuration"""
+        issues = []
+        overview_config = self.data.get('overview', {})
+
+        # Validate language
+        language = overview_config.get('language', 'ko')
+        valid_languages = {'ko', 'en', 'ja', 'zh_CN'}
+        if language not in valid_languages:
+            issues.append(('warning', f'Invalid overview language: {language}. Valid options: {valid_languages}'))
+
+        return issues

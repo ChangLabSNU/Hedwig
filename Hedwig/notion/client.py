@@ -220,7 +220,7 @@ class NotionClient:
         """
         if path is None:
             return set()
-        
+
         blacklist = set()
         try:
             with open(path, 'r') as f:
