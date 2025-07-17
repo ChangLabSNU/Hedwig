@@ -45,7 +45,7 @@ class ContextPluginRegistry:
             raise ValueError(f"Plugin '{name}' is already registered")
 
         if not issubclass(plugin_class, ContextPlugin):
-            raise TypeError(f"Plugin class must inherit from ContextPlugin")
+            raise TypeError("Plugin class must inherit from ContextPlugin")
 
         cls._plugins[name] = plugin_class
 

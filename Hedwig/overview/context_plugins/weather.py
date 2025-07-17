@@ -22,7 +22,6 @@
 """Weather context plugin for overview generation"""
 
 from typing import Optional, Dict, Any
-from datetime import date, timedelta
 import requests
 
 from .base import ContextPlugin

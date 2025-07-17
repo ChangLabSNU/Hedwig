@@ -21,15 +21,14 @@
 
 """Main overview generation module for creating overview summaries"""
 
-import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
-from .context_plugins import ContextPlugin, ContextPluginRegistry
+from .context_plugins import ContextPluginRegistry
 
 
 class OverviewGenerator:

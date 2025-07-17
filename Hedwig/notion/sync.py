@@ -26,7 +26,6 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
-import pytz
 from dateutil.parser import parse as parse8601
 from tqdm import tqdm
 

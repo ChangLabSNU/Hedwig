@@ -22,7 +22,6 @@
 """Timezone utilities for consistent datetime handling across Hedwig"""
 
 from datetime import datetime, timezone
-from typing import Optional, Union
 
 import pytz
 

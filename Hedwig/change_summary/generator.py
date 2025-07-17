@@ -21,7 +21,6 @@
 
 """Main change summary generation module"""
 
-import datetime
 from typing import List, Optional, Dict
 from pathlib import Path
 import os
