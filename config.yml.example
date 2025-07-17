@@ -152,6 +152,30 @@ overview:
       latitude: 37.5665  # Seoul latitude (example)
       longitude: 126.9780  # Seoul longitude (example)
       city_name: Seoul  # City name for display
+
+    # Calendar context plugin - adds calendar events information
+    calendar:
+      enabled: false  # Set to true to enable calendar context
+      days_before: 0  # Number of days in the past to include (0 = today only, 1 = from yesterday)
+      days_after: 0  # Number of days in the future to include (0 = today only, 1 = through tomorrow)
+      calendars:  # List of calendars to fetch
+        - name: Korean Holidays
+          type: ical  # 'ical' or 'caldav'
+          url: https://calendar.google.com/calendar/ical/ko.south_korea%23holiday%40group.v.calendar.google.com/public/basic.ics
+          enabled: true
+        # Add more calendars as needed
+        # - name: Team Calendar
+        #   type: ical
+        #   url: https://example.com/team-calendar.ics
+        #   enabled: true
+        # CalDAV example (requires 'pip install caldav')
+        # - name: Nextcloud Calendar
+        #   type: caldav
+        #   url: https://nextcloud.example.com/remote.php/dav/
+        #   username: your-username  # Optional, can use env var CALDAV_USERNAME
+        #   password: your-password  # Optional, can use env var CALDAV_PASSWORD
+        #   calendar_url: https://nextcloud.example.com/remote.php/dav/calendars/user/personal/  # Optional
+        #   enabled: true
     # Add more context plugins here as they become available
 
 # ==============================================================================

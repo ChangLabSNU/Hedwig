@@ -123,8 +123,9 @@ Use the following context information minimally only at the appropriate places i
 
     def _initialize_context_plugins(self):
         """Initialize context plugins from configuration"""
-        # Import weather plugin to ensure it's registered
+        # Import plugins to ensure they're registered
         from .context_plugins import weather  # noqa: F401
+        from .context_plugins import calendar  # noqa: F401
 
         # Get context plugins configuration
         context_config = self.config.get('overview.context_plugins', {})

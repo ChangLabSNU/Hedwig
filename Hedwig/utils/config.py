@@ -340,4 +340,29 @@ class Config:
                 if not plugin_config.get('city_name'):
                     issues.append(('info', 'Weather plugin: city_name not set, will use "the location"'))
 
+            # Validate calendar plugin specifically
+            if plugin_name == 'calendar' and plugin_config.get('enabled', False):
+                calendars = plugin_config.get('calendars', [])
+                if not calendars:
+                    issues.append(('warning', 'Calendar plugin enabled but no calendars configured'))
+                else:
+                    for idx, cal in enumerate(calendars):
+                        if not isinstance(cal, dict):
+                            issues.append(('error', f'Calendar plugin: calendar {idx} must be a dictionary'))
+                            continue
+                        if cal.get('enabled', True):
+                            if not cal.get('name'):
+                                issues.append(('warning', f'Calendar plugin: calendar {idx} missing name'))
+                            if not cal.get('url'):
+                                issues.append(('error', f'Calendar plugin: calendar {idx} missing URL'))
+                            cal_type = cal.get('type', 'ical')
+                            if cal_type not in ['ical', 'caldav']:
+                                issues.append(('warning', f'Calendar plugin: calendar {idx} has invalid type "{cal_type}"'))
+                            # CalDAV specific validation
+                            if cal_type == 'caldav':
+                                if not cal.get('username') and not os.getenv('CALDAV_USERNAME'):
+                                    issues.append(('info', f'Calendar plugin: CalDAV calendar {idx} has no username (auth may fail)'))
+                                if not cal.get('password') and not os.getenv('CALDAV_PASSWORD'):
+                                    issues.append(('info', f'Calendar plugin: CalDAV calendar {idx} has no password (auth may fail)'))
+
         return issues
