@@ -106,6 +106,11 @@ api:
     #     forthcoming_range: 'today'
     #   # ... customize other days as needed
 
+    # Context information prefix - instructions for how to use context data
+    # This text appears before any context plugin output in the overview prompt
+    # overview_context_information_prefix: |
+    #   Use the following context information minimally only at the appropriate places in the summary, and do not repeat the context information verbatim.
+
 # ==============================================================================
 # CHANGE SUMMARY - Generate AI summaries from Git diffs
 # ==============================================================================
@@ -138,6 +143,16 @@ overview:
 
   # Lab/team information for context
   # lab_info: "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
+
+  # Context plugins provide additional information in the overview prompt
+  context_plugins:
+    # Weather context plugin - adds weather information
+    weather:
+      enabled: false  # Set to true to enable weather context
+      latitude: 37.5665  # Seoul latitude (example)
+      longitude: 126.9780  # Seoul longitude (example)
+      city_name: Seoul  # City name for display
+    # Add more context plugins here as they become available
 
 # ==============================================================================
 # MESSAGING - Send summaries to team communication platforms

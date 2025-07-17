@@ -324,4 +324,20 @@ class Config:
         if language not in valid_languages:
             issues.append(('warning', f'Invalid overview language: {language}. Valid options: {valid_languages}'))
 
+        # Validate context plugins
+        context_plugins = overview_config.get('context_plugins', {})
+        for plugin_name, plugin_config in context_plugins.items():
+            if not isinstance(plugin_config, dict):
+                issues.append(('error', f'Invalid configuration for context plugin "{plugin_name}": must be a dictionary'))
+                continue
+
+            # Validate weather plugin specifically
+            if plugin_name == 'weather' and plugin_config.get('enabled', False):
+                if not plugin_config.get('latitude'):
+                    issues.append(('warning', 'Weather plugin enabled but latitude is not set'))
+                if not plugin_config.get('longitude'):
+                    issues.append(('warning', 'Weather plugin enabled but longitude is not set'))
+                if not plugin_config.get('city_name'):
+                    issues.append(('info', 'Weather plugin: city_name not set, will use "the location"'))
+
         return issues

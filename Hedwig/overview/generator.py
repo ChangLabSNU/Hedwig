@@ -23,12 +23,13 @@
 
 import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
+from .context_plugins import ContextPlugin, ContextPluginRegistry
 
 
 class OverviewGenerator:
@@ -50,7 +51,12 @@ Add a playful and humorous conclusion sentence including emojis to the summary t
 Give the MVP announcement and conclusion sentence in a first-person perspective as if you are the author of the summary. {author_name_instruction}
 When choosing the MVP, consider the impact in terms of biological significance and overall contribution to the research goals rather than simply writing complex notes.
 
+{context_information}
 {language_instruction}
+"""
+
+    DEFAULT_CONTEXT_INFORMATION_PREFIX = """\
+Use the following context information minimally only at the appropriate places in the summary, and do not repeat the context information verbatim.
 """
 
     # Language-specific instructions for overview generation
@@ -106,8 +112,57 @@ When choosing the MVP, consider the impact in terms of biological significance a
         self.lab_info = self.config.get('overview.lab_info',
                                   "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies")
 
+        # Context information prefix configuration
+        self.context_info_prefix = self.config.get('api.llm.overview_context_information_prefix',
+                                                   self.DEFAULT_CONTEXT_INFORMATION_PREFIX)
+
+        # Initialize context plugins
+        self._initialize_context_plugins()
+
         # Load prompts
         self._load_prompts()
+
+    def _initialize_context_plugins(self):
+        """Initialize context plugins from configuration"""
+        # Import weather plugin to ensure it's registered
+        from .context_plugins import weather  # noqa: F401
+
+        # Get context plugins configuration
+        context_config = self.config.get('overview.context_plugins', {})
+
+        # Create plugin instances
+        self.context_plugins = ContextPluginRegistry.create_plugins(
+            context_config,
+            logger=self.logger
+        )
+
+        if self.context_plugins:
+            self.logger.info(f"Loaded {len(self.context_plugins)} context plugin(s)")
+
+    def _get_context_information(self) -> str:
+        """Gather context information from all enabled plugins
+
+        Returns:
+            Combined context string
+        """
+        if not self.context_plugins:
+            return ""
+
+        context_parts = []
+
+        for plugin in self.context_plugins:
+            try:
+                context = plugin.get_context()
+                if context:
+                    context_parts.append(context)
+            except Exception as e:
+                self.logger.error(f"Error getting context from plugin '{plugin.name}': {e}")
+
+        if not context_parts:
+            return ""
+
+        # Combine all context parts with double newlines
+        return self.context_info_prefix + "\n\n".join(context_parts)
 
     def _load_prompts(self):
         """Load prompts from configuration or use defaults"""
@@ -143,8 +198,15 @@ When choosing the MVP, consider the impact in terms of biological significance a
             else:
                 # Merge configurations
                 day_config = weekday_config.get(day, default_config)
-                # Add language-specific instructions and lab info to the configuration
-                full_config = {**day_config, **lang_instructions, 'lab_info': self.lab_info}
+                # Get context information
+                context_info = self._get_context_information()
+                # Add language-specific instructions, lab info, and context to the configuration
+                full_config = {
+                    **day_config,
+                    **lang_instructions,
+                    'lab_info': self.lab_info,
+                    'context_information': context_info
+                }
                 self.prompts[day_index] = template.format(**full_config)
 
     def generate(self, write_to_file: bool = True) -> Optional[str]:
