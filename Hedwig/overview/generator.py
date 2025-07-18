@@ -126,9 +126,16 @@ Use the following context information minimally only at the appropriate places i
         # Import plugins to ensure they're registered
         from .context_plugins import weather  # noqa: F401
         from .context_plugins import calendar  # noqa: F401
+        from .context_plugins import static  # noqa: F401
 
         # Get context plugins configuration
         context_config = self.config.get('overview.context_plugins', {})
+        
+        # Add timezone to each plugin's config
+        global_timezone = self.config.get('global.timezone', 'UTC')
+        for plugin_name, plugin_config in context_config.items():
+            if isinstance(plugin_config, dict) and 'timezone' not in plugin_config:
+                plugin_config['timezone'] = global_timezone
 
         # Create plugin instances
         self.context_plugins = ContextPluginRegistry.create_plugins(

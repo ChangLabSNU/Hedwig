@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 import os
 import re
 import requests
+import pytz
 
 from .base import ContextPlugin
 from .registry import ContextPluginRegistry
@@ -40,6 +41,14 @@ class CalendarContextPlugin(ContextPlugin):
         self.calendars = config.get('calendars', [])
         self.days_before = config.get('days_before', 0)
         self.days_after = config.get('days_after', 0)
+        
+        # Get timezone from config, default to UTC if not specified
+        tz_name = config.get('timezone', 'UTC')
+        try:
+            self.timezone = pytz.timezone(tz_name)
+        except pytz.UnknownTimeZoneError:
+            self.logger.warning(f"Unknown timezone '{tz_name}', using UTC")
+            self.timezone = pytz.UTC
 
         if not self.calendars:
             self.logger.warning("Calendar plugin: no calendars configured")
@@ -166,7 +175,7 @@ class CalendarContextPlugin(ContextPlugin):
                 calendar = calendars[0]  # Use first calendar
 
             # Calculate date range
-            now = datetime.now(timezone.utc)
+            now = datetime.now(self.timezone)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             start_date = today_start - timedelta(days=self.days_before)
             end_date = today_start + timedelta(days=self.days_after + 1)
@@ -324,7 +333,7 @@ class CalendarContextPlugin(ContextPlugin):
         Returns:
             List of (datetime, event) tuples sorted by date
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(self.timezone)
         # For date comparison, use start of day to include all-day events
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         start_window = today_start - timedelta(days=self.days_before)
@@ -367,7 +376,7 @@ class CalendarContextPlugin(ContextPlugin):
         if not events:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(self.timezone)
         context_lines = [f"Upcoming events from {calendar_name}:"]
 
         # Group events by relative time periods
