@@ -146,6 +146,33 @@ overview:
 
   # Context plugins provide additional information in the overview prompt
   context_plugins:
+    # Date context plugin - adds current date and weekday
+    date:
+      enabled: false  # Set to true to enable date context
+      # Provides today's date in format: "Today: 2025-07-19 (Friday)"
+
+    # Static context plugin - adds fixed context information
+    static:
+      enabled: false  # Set to true to enable static context
+      # The content field contains the static text that will be included in prompts
+      # This is useful for providing laboratory-specific information such as:
+      # - Research areas and focus
+      # - Current research topics
+      # - Team members and their expertise
+      # - Laboratory policies or guidelines
+      content: |
+        Laboratory: Computational Biology Lab
+        Research Areas: Genomics, RNA Biology, Bioinformatics
+        Current Projects:
+        - Single-cell RNA sequencing analysis
+        - Alternative splicing in cancer
+        - Long-read sequencing methods
+        Team Members:
+        - Dr. Jane Smith (PI) - Computational genomics
+        - Dr. John Doe - Machine learning for biology
+        - Alice Johnson - RNA-seq analysis
+        - Bob Wilson - Proteomics integration
+
     # Weather context plugin - adds weather information
     weather:
       enabled: false  # Set to true to enable weather context
@@ -176,6 +203,7 @@ overview:
         #   password: your-password  # Optional, can use env var CALDAV_PASSWORD
         #   calendar_url: https://nextcloud.example.com/remote.php/dav/calendars/user/personal/  # Optional
         #   enabled: true
+
     # Add more context plugins here as they become available
 
 # ==============================================================================

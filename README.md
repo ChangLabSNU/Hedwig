@@ -347,6 +347,53 @@ overview:
 
 Context plugins provide additional contextual information in overview summaries. This helps the AI generate more relevant and timely summaries by providing context about current conditions.
 
+#### Date Plugin
+
+Provides the current date and weekday:
+
+```yaml
+overview:
+  context_plugins:
+    date:
+      enabled: true
+```
+
+Outputs: `Today: 2025-07-19 (Friday)`
+
+This simple plugin helps the AI understand what day it is when generating summaries, which can be useful for contextual references.
+
+#### Static Plugin
+
+Provides fixed context information that remains constant across all summaries. Perfect for laboratory-specific information:
+
+```yaml
+overview:
+  context_plugins:
+    static:
+      enabled: true
+      content: |
+        Laboratory: Computational Biology Lab
+        Research Areas: Genomics, RNA Biology, Bioinformatics
+        Current Projects:
+        - Single-cell RNA sequencing analysis
+        - Alternative splicing in cancer
+        - Long-read sequencing methods
+        Team Members:
+        - Dr. Jane Smith (PI) - Computational genomics
+        - Dr. John Doe - Machine learning for biology
+        - Alice Johnson - RNA-seq analysis
+        - Bob Wilson - Proteomics integration
+```
+
+**Use cases:**
+- Laboratory information and research focus
+- Current research topics and projects
+- Team member list and expertise
+- Laboratory policies or guidelines
+- Any other static context that helps AI generate better summaries
+
+The content is passed directly to the LLM without modification, allowing full control over the formatting and information structure.
+
 #### Weather Plugin
 
 Adds weather information to the overview prompt:

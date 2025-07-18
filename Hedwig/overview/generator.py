@@ -127,10 +127,11 @@ Use the following context information minimally only at the appropriate places i
         from .context_plugins import weather  # noqa: F401
         from .context_plugins import calendar  # noqa: F401
         from .context_plugins import static  # noqa: F401
+        from .context_plugins import date  # noqa: F401
 
         # Get context plugins configuration
         context_config = self.config.get('overview.context_plugins', {})
-        
+
         # Add timezone to each plugin's config
         global_timezone = self.config.get('global.timezone', 'UTC')
         for plugin_name, plugin_config in context_config.items():
