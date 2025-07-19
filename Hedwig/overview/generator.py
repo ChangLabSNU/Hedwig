@@ -257,6 +257,27 @@ Use the following context information minimally only at the appropriate places i
             self.logger.error(f"Error reading individual summary file: {e}")
             return None
 
+        # Check for Slack conversation summary file
+        conv_filename = f'{date_str}-conv.md'
+        conv_filepath = self.summary_dir / year / month / conv_filename
+
+        self.logger.info(f"Checking for Slack conversation summary file: {conv_filepath}")
+
+        if conv_filepath.exists():
+            try:
+                conv_content = conv_filepath.read_text(encoding='utf-8').strip()
+                if conv_content:
+                    self.logger.info(f"Found Slack conversation summary with {len(conv_content)} characters")
+                    # Append Slack conversation summary to content
+                    content += f"\n\n{conv_content}"
+                else:
+                    self.logger.info("Slack conversation summary file is empty.")
+            except Exception as e:
+                self.logger.error(f"Error reading Slack conversation summary file: {e}")
+                # Continue with just the individual summaries
+        else:
+            self.logger.info("Slack conversation summary file does not exist.")
+
         # Generate overview summary
         self.logger.info("Generating overview summary...")
 
