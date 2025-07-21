@@ -1,6 +1,6 @@
 # Hedwig
 
-Hedwig is a research note backup storage that synchronizes Notion content to Git repositories and generates AI summaries for team communication. It automates the workflow of tracking research progress, creating summaries, and distributing them through messaging platforms.
+Hedwig is a research note management system designed for research teams. It synchronizes Notion workspaces to Git repositories for version control and generates AI-powered daily summaries of research activities. The system creates both individual change summaries and team overview summaries with MVP highlights, then distributes them through messaging platforms like Slack.
 
 ## Features
 

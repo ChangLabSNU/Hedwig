@@ -20,9 +20,15 @@
 # SOFTWARE.
 
 """
-Hedwig - A tool for managing and processing various data workflows
+Hedwig - Research note management system with Notion sync and AI-powered summaries
+
+A comprehensive tool for research teams that:
+- Synchronizes research notes from Notion to Git repositories
+- Generates AI-powered daily summaries of research activities
+- Creates team overview summaries with MVP highlights
+- Distributes summaries through messaging platforms (Slack, etc.)
 """
 
-__version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__version__ = "1.0.0"
+__author__ = "Hyeshik Chang"
+__email__ = "hyeshik@snu.ac.kr"
