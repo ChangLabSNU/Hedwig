@@ -129,6 +129,11 @@ def create_parser():
         action='store_true',
         help='Suppress information messages'
     )
+    overview_parser.add_argument(
+        '--print-prompt',
+        action='store_true',
+        help='Print the LLM input prompt to stdout and exit'
+    )
 
     # Post summary to messaging platform
     post_parser = subparsers.add_parser(
@@ -237,6 +242,19 @@ def handle_generate_overview(args):
     from .overview.generator import OverviewGenerator
 
     generator = OverviewGenerator(config_path=args.config, quiet=args.quiet)
+    
+    # If --print-prompt is specified, print the prompt and exit
+    if args.print_prompt:
+        prompt_info = generator.get_prompt_for_debugging()
+        if prompt_info:
+            print("=== PROMPT ===")
+            print(prompt_info['prompt'])
+            print("\n=== USER INPUT ===")
+            print(prompt_info['user_input'])
+        else:
+            print("No prompt available (e.g., no summaries found or Sunday)")
+        return
+    
     overview = generator.generate(write_to_file=not args.no_write)
 
     # Print overview if not writing to file (unless quiet)

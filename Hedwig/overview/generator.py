@@ -22,13 +22,14 @@
 """Main overview generation module for creating overview summaries"""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
 from .context_plugins import ContextPluginRegistry
+from .external_content import ExternalContentManager
 
 
 class OverviewGenerator:
@@ -117,6 +118,12 @@ Use the following context information minimally only at the appropriate places i
 
         # Initialize context plugins
         self._initialize_context_plugins()
+
+        # Initialize external content manager
+        self.external_content_manager = ExternalContentManager(
+            self.config.get('overview', {}),
+            self.summary_dir
+        )
 
         # Load prompts
         self._load_prompts()
@@ -217,24 +224,22 @@ Use the following context information minimally only at the appropriate places i
                 }
                 self.prompts[day_index] = template.format(**full_config)
 
-    def generate(self, write_to_file: bool = True) -> Optional[str]:
-        """Generate overview from today's individual summaries
+    def _prepare_llm_input(self, date_str: str) -> Optional[Dict[str, str]]:
+        """Prepare the LLM input by gathering summaries and external content
 
         Args:
-            write_to_file: Whether to write overview to file
+            date_str: Date string in YYYY-MM-DD format
 
         Returns:
-            Generated overview text or None if no summaries found
+            Dictionary with 'prompt' and 'user_input' keys, or None if no data available
         """
-        self.logger.info("Starting overview generation...")
-
-        now = TimezoneManager.now_local(self.config)
-        year = now.strftime('%Y')
-        month = now.strftime('%m')
-        date_str = now.strftime('%Y%m%d')
+        year = date_str[:4]
+        month = date_str[5:7]
 
         # Check for individual summary file
-        indiv_filename = f'{date_str}-indiv.md'
+        # Convert date from YYYY-MM-DD to YYYYMMDD for filename
+        date_str_for_file = date_str.replace('-', '')
+        indiv_filename = f'{date_str_for_file}-indiv.md'
         indiv_filepath = self.summary_dir / year / month / indiv_filename
 
         self.logger.info(f"Checking for individual summary file: {indiv_filepath}")
@@ -257,29 +262,22 @@ Use the following context information minimally only at the appropriate places i
             self.logger.error(f"Error reading individual summary file: {e}")
             return None
 
-        # Check for Slack conversation summary file
-        conv_filename = f'{date_str}-conv.md'
-        conv_filepath = self.summary_dir / year / month / conv_filename
+        # Fetch external content
+        self.logger.info("Checking for external content sources...")
+        external_content = self.external_content_manager.fetch_all_content(date_str)
 
-        self.logger.info(f"Checking for Slack conversation summary file: {conv_filepath}")
+        # Prepare the full input for LLM
+        # Structure: Individual summaries first, then external content at the end
+        full_input = content
 
-        if conv_filepath.exists():
-            try:
-                conv_content = conv_filepath.read_text(encoding='utf-8').strip()
-                if conv_content:
-                    self.logger.info(f"Found Slack conversation summary with {len(conv_content)} characters")
-                    # Append Slack conversation summary to content
-                    content += f"\n\n{conv_content}"
-                else:
-                    self.logger.info("Slack conversation summary file is empty.")
-            except Exception as e:
-                self.logger.error(f"Error reading Slack conversation summary file: {e}")
-                # Continue with just the individual summaries
+        if external_content:
+            self.logger.info(f"Found external content from {len(external_content)} source(s)")
+            # Format and append external content at the end
+            formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
+            # Add clear separation between main content and external content
+            full_input = content + "\n\n" + formatted_external
         else:
-            self.logger.info("Slack conversation summary file does not exist.")
-
-        # Generate overview summary
-        self.logger.info("Generating overview summary...")
+            self.logger.info("No external content found.")
 
         # Get the appropriate prompt for today
         current_weekday = TimezoneManager.get_local_weekday(self.config)
@@ -290,10 +288,53 @@ Use the following context information minimally only at the appropriate places i
             self.logger.info("No overview generated on Sunday")
             return None
 
+        return {
+            'prompt': selected_prompt,
+            'user_input': full_input
+        }
+
+    def get_prompt_for_debugging(self) -> Optional[Dict[str, str]]:
+        """Get the prompt and input that would be sent to the LLM for debugging purposes
+
+        Returns:
+            Dictionary with 'prompt' and 'user_input' keys, or None if no data available
+        """
+        # Get today's date in local timezone (for filename)
+        now = TimezoneManager.now_local(self.config)
+        date_str = now.strftime('%Y-%m-%d')
+
+        # Use the common method to prepare LLM input
+        return self._prepare_llm_input(date_str)
+
+    def generate(self, write_to_file: bool = True) -> Optional[str]:
+        """Generate overview from today's individual summaries
+
+        Args:
+            write_to_file: Whether to write overview to file
+
+        Returns:
+            Generated overview text or None if no summaries found
+        """
+        self.logger.info("Starting overview generation...")
+
+        # Get today's date in local timezone (for filename)
+        now = TimezoneManager.now_local(self.config)
+        date_str = now.strftime('%Y-%m-%d')
+
+        # Prepare LLM input using the common method
+        llm_input = self._prepare_llm_input(date_str)
+
+        if not llm_input:
+            # Error already logged in _prepare_llm_input
+            return None
+
+        # Generate overview summary
+        self.logger.info("Generating overview summary...")
+
         try:
             overview = self.llm_client.generate(
-                prompt=selected_prompt,
-                user_input=content,
+                prompt=llm_input['prompt'],
+                user_input=llm_input['user_input'],
                 model=self.model
             )
             self.logger.info("Overview summary generated successfully")
@@ -308,7 +349,9 @@ Use the following context information minimally only at the appropriate places i
 
         # Write overview file
         if write_to_file:
-            self._write_overview_to_file(overview, date_str)
+            # Convert date format from YYYY-MM-DD to YYYYMMDD for filename
+            date_str_for_file = date_str.replace('-', '')
+            self._write_overview_to_file(overview, date_str_for_file)
 
         return overview
 

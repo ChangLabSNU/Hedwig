@@ -206,6 +206,24 @@ overview:
 
     # Add more context plugins here as they become available
 
+  # External content sources - Include additional content in overview generation
+  external_content:
+    enabled: false  # Set to true to enable external content inclusion
+    sources:
+      - name: "slack_conversations"
+        file_suffix: "-slack.md"
+        description: "Team discussions from Slack"
+        required: false
+      - name: "meeting_notes"
+        file_suffix: "-meeting.md"
+        description: "Meeting minutes and decisions"
+        required: false
+      # Add more sources as needed
+      # - name: "external_updates"
+      #   file_suffix: "-external.md"
+      #   description: "Updates from external collaborators"
+      #   required: false
+
 # ==============================================================================
 # MESSAGING - Send summaries to team communication platforms
 # ==============================================================================
