@@ -41,7 +41,7 @@ class CalendarContextPlugin(ContextPlugin):
         self.calendars = config.get('calendars', [])
         self.days_before = config.get('days_before', 0)
         self.days_after = config.get('days_after', 0)
-        
+
         # Get timezone from config, default to UTC if not specified
         tz_name = config.get('timezone', 'UTC')
         try:

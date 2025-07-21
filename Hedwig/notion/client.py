@@ -23,7 +23,7 @@
 
 import json
 import uuid
-from typing import Dict, Any, List, Generator, Optional, Set
+from typing import Dict, Any, List, Generator, Optional, Set, Tuple
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -142,43 +142,98 @@ class NotionClient:
             page_id: Notion page ID
 
         Returns:
-            Hierarchical path string (e.g., "Workspace / Parent / Page")
+            Hierarchical path string (e.g., "Parent / Page")
         """
         path_parts = []
-        current_page_id = page_id
+        current_id = page_id
 
         try:
-            while current_page_id:
-                page = self.client.pages.retrieve(page_id=current_page_id)
+            while current_id:
+                # Get the title and parent info for the current item
+                title, parent_type, parent_id = self._get_item_info(current_id)
 
-                # Extract the page title
-                title_property = page.get("properties", {}).get("title", {})
-                if title_property.get("type") == "title" and title_property.get("title"):
-                    path_parts.append(title_property["title"][0]["plain_text"])
+                # Add title to path
+                if title:
+                    path_parts.append(title)
 
-                parent = page.get("parent", {})
-                parent_type = parent.get("type")
-
-                if parent_type == "page_id":
-                    current_page_id = parent.get("page_id")
-                elif parent_type == "database_id":
-                    # If the parent is a database, get the database title
-                    database_id = parent.get("database_id")
-                    database = self.client.databases.retrieve(database_id=database_id)
-                    db_title = database.get("title", [])
-                    if db_title:
-                        path_parts.append(db_title[0]["plain_text"])
-                    current_page_id = None
-                elif parent_type == "workspace":
-                    path_parts.append("Workspace")
-                    current_page_id = None
+                # Determine next item to process based on parent type
+                if parent_type == "workspace":
+                    # Stop at workspace level (don't include "Workspace" in path)
+                    break
+                elif parent_type in ("page_id", "database_id"):
+                    current_id = parent_id
                 else:
-                    current_page_id = None
+                    # Unknown parent type or no parent
+                    break
 
         except Exception as e:
             return f"An error occurred: {e}"
 
-        return " / ".join(reversed(path_parts[1:]))
+        return " / ".join(reversed(path_parts))
+
+    def _get_item_info(self, item_id: str) -> Tuple[str, str, Optional[str]]:
+        """Extract title and parent information from a Notion page or database
+
+        Args:
+            item_id: ID of the page or database
+
+        Returns:
+            Tuple of (title, parent_type, parent_id)
+        """
+        # Try to retrieve as a page first
+        try:
+            page = self.client.pages.retrieve(page_id=item_id)
+            title = self._extract_page_title(page)
+            parent = page.get("parent", {})
+            return title, parent.get("type", ""), parent.get(parent.get("type", ""))
+        except:
+            # If page retrieval fails, try as a database
+            try:
+                database = self.client.databases.retrieve(database_id=item_id)
+                title = self._extract_database_title(database)
+                parent = database.get("parent", {})
+                return title, parent.get("type", ""), parent.get(parent.get("type", ""))
+            except:
+                # If both fail, return minimal info
+                return f"Untitled ({item_id[:8]})", "", None
+
+    def _extract_page_title(self, page: Dict[str, Any]) -> str:
+        """Extract title from a Notion page
+
+        Args:
+            page: Notion page object
+
+        Returns:
+            Page title or fallback string
+        """
+        # First, try to find title in properties (works for database items)
+        properties = page.get("properties", {})
+        for _, prop_value in properties.items():
+            if prop_value.get("type") == "title" and prop_value.get("title"):
+                return prop_value["title"][0]["plain_text"]
+
+        # Fallback to page title (for regular pages)
+        if "title" in page:
+            title_items = page.get("title", [])
+            if title_items:
+                return title_items[0].get("plain_text", "")
+
+        # Final fallback
+        return f"Untitled ({page.get('id', 'unknown')[:8]})"
+
+    def _extract_database_title(self, database: Dict[str, Any]) -> str:
+        """Extract title from a Notion database
+
+        Args:
+            database: Notion database object
+
+        Returns:
+            Database title or fallback string
+        """
+        title_items = database.get("title", [])
+        if title_items:
+            return title_items[0]["plain_text"]
+        return f"Untitled Database ({database.get('id', 'unknown')[:8]})"
 
     @staticmethod
     def _extract_title(obj: Dict[str, Any]) -> str:
