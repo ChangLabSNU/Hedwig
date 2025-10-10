@@ -23,6 +23,7 @@
 
 import os
 import re
+from urllib.parse import urlparse, urlunparse
 from typing import Dict, Any
 
 from notion2md.exporter.block import StringExporter
@@ -72,6 +73,7 @@ class MarkdownExporter:
         # Export content
         content = StringExporter(block_id=page_id).export()
         content = self._simplify_image_links(content)
+        content = self._sanitize_amazon_links(content)
 
         # Write to file
         with open(target_path, 'w') as f:
@@ -114,3 +116,36 @@ class MarkdownExporter:
         """
         pattern = r"!\[(.*?)\]\(.*?\)"
         return re.sub(pattern, r"![\1]()", text)
+
+    @staticmethod
+    def _sanitize_amazon_links(text: str) -> str:
+        """Remove credential query parameters from Amazon S3 style links.
+
+        Args:
+            text: Markdown text
+
+        Returns:
+            Text with sanitized Amazon URLs
+        """
+        pattern = re.compile(r'(?P<prefix>!?)\[(?P<label>[^\]]*?)\]\((?P<url>[^)]+)\)')
+
+        def _replace(match: re.Match) -> str:
+            prefix = match.group('prefix')
+            label = match.group('label')
+            url = match.group('url').strip()
+            sanitized = MarkdownExporter._strip_amazon_query(url)
+            return f"{prefix}[{label}]({sanitized})"
+
+        return pattern.sub(_replace, text)
+
+    @staticmethod
+    def _strip_amazon_query(url: str) -> str:
+        """Strip query/fragment components from amazonaws.com URLs."""
+        if not url:
+            return ''
+
+        parsed = urlparse(url)
+        if parsed.netloc.lower().endswith('amazonaws.com') and (parsed.query or parsed.fragment):
+            sanitized = parsed._replace(query='', fragment='')
+            return urlunparse(sanitized)
+        return url
