@@ -75,11 +75,14 @@ class MarkdownExporter:
         content = self._simplify_image_links(content)
         content = self._sanitize_amazon_links(content)
 
+        sanitized_note = self._sanitize_note_fields(page_info)
+        sanitized_path = self._normalize_single_line(page_path)
+
         # Write to file
         with open(target_path, 'w') as f:
             header = self.header_template.format(
-                note=page_info,
-                path=page_path
+                note=sanitized_note,
+                path=sanitized_path
             )
             f.write(header)
             f.write(content)
@@ -149,3 +152,24 @@ class MarkdownExporter:
             sanitized = parsed._replace(query='', fragment='')
             return urlunparse(sanitized)
         return url
+
+    @staticmethod
+    def _sanitize_note_fields(note: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy of note metadata with header strings normalized."""
+        sanitized: Dict[str, Any] = {}
+        for key, value in note.items():
+            if isinstance(value, str):
+                sanitized[key] = MarkdownExporter._normalize_single_line(value)
+            else:
+                sanitized[key] = value
+        return sanitized
+
+    @staticmethod
+    def _normalize_single_line(value: Any) -> str:
+        """Collapse whitespace/newlines so header lines stay single-line."""
+        if value is None:
+            return ''
+        if not isinstance(value, str):
+            value = str(value)
+        normalized = value.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+        return re.sub(r' {2,}', ' ', normalized).strip()
