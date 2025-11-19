@@ -134,6 +134,11 @@ def create_parser():
         action='store_true',
         help='Print the LLM input prompt to stdout and exit'
     )
+    overview_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Regenerate overview even if an up-to-date file already exists'
+    )
 
     # Post summary to messaging platform
     post_parser = subparsers.add_parser(
@@ -242,7 +247,7 @@ def handle_generate_overview(args):
     from .overview.generator import OverviewGenerator
 
     generator = OverviewGenerator(config_path=args.config, quiet=args.quiet)
-    
+
     # If --print-prompt is specified, print the prompt and exit
     if args.print_prompt:
         prompt_info = generator.get_prompt_for_debugging()
@@ -254,7 +259,15 @@ def handle_generate_overview(args):
         else:
             print("No prompt available (e.g., no summaries found or Sunday)")
         return
-    
+
+    # Skip expensive regeneration if cached overview is fresher than inputs
+    if not args.no_write and not args.force:
+        cached_overview = generator.get_up_to_date_overview_path()
+        if cached_overview:
+            if not args.quiet:
+                print(f"Overview already up to date at {cached_overview}. Skipping generation.")
+            return
+
     overview = generator.generate(write_to_file=not args.no_write)
 
     # Print overview if not writing to file (unless quiet)

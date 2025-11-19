@@ -22,7 +22,7 @@
 """Main overview generation module for creating overview summaries"""
 
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
@@ -305,6 +305,52 @@ Use the following context information minimally only at the appropriate places i
 
         # Use the common method to prepare LLM input
         return self._prepare_llm_input(date_str)
+
+    def get_up_to_date_overview_path(self) -> Optional[Path]:
+        """Return today's overview path if it's newer than all source files."""
+        today = TimezoneManager.get_local_date(self.config)
+        date_str = today.strftime('%Y-%m-%d')
+
+        # Build basic file paths
+        year = today.strftime('%Y')
+        month = today.strftime('%m')
+        date_str_for_file = date_str.replace('-', '')
+        base_dir = self.summary_dir / year / month
+        overview_path = base_dir / f'{date_str_for_file}-overview.md'
+
+        if not overview_path.exists():
+            return None
+
+        individual_path = base_dir / f'{date_str_for_file}-indiv.md'
+        if not individual_path.exists():
+            return None
+
+        source_files: List[Path] = [individual_path]
+
+        # Include optional external content sources when present
+        if self.external_content_manager and self.external_content_manager.enabled:
+            for source in self.external_content_manager.sources:
+                suffix = source.get('file_suffix')
+                if not suffix:
+                    continue
+
+                candidate = base_dir / f'{date_str_for_file}{suffix}'
+                if candidate.exists():
+                    source_files.append(candidate)
+                elif source.get('required', False):
+                    # Missing required source means we can't guarantee freshness
+                    return None
+
+        if not source_files:
+            return None
+
+        latest_source_mtime = max(path.stat().st_mtime for path in source_files)
+        overview_mtime = overview_path.stat().st_mtime
+
+        if overview_mtime >= latest_source_mtime:
+            return overview_path
+
+        return None
 
     def generate(self, write_to_file: bool = True) -> Optional[str]:
         """Generate overview from today's individual summaries
