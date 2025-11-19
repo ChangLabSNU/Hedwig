@@ -273,15 +273,33 @@ def handle_generate_overview(args):
             print("No prompt available (e.g., no summaries found or Sunday)")
         return
 
-    # Skip expensive regeneration if cached overview is fresher than inputs
-    if not args.no_write and not args.force:
-        cached_overview = generator.get_up_to_date_overview_path(target_date)
-        if cached_overview:
-            if not args.quiet:
-                print(f"Overview already up to date at {cached_overview}. Skipping generation.")
-            return
+    needs_overview = True
+    needs_structured = generator.structured_logger.enabled and not args.no_write
 
-    overview = generator.generate(write_to_file=not args.no_write, target_date=target_date)
+    if not args.force and not args.no_write:
+        cached_overview_path = generator.get_up_to_date_overview_path(target_date)
+        if cached_overview_path:
+            needs_overview = False
+
+    if needs_structured and not args.force:
+        needs_structured = not generator.is_structured_log_up_to_date(target_date)
+
+    if not needs_overview and not needs_structured:
+        if not args.quiet:
+            print("Overview and structured log already up to date. Skipping generation.")
+        return
+
+    overview = None
+    if needs_overview:
+        overview = generator.generate(
+            write_to_file=not args.no_write,
+            target_date=target_date,
+            generate_structured_log=needs_structured
+        )
+        needs_structured = False
+
+    if needs_structured:
+        generator.generate_structured_log(target_date)
 
     # Print overview if not writing to file (unless quiet)
     if args.no_write and overview and not args.quiet:

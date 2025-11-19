@@ -22,6 +22,7 @@
 """Main overview generation module for creating overview summaries"""
 
 from datetime import date as date_type
+import re
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -31,6 +32,7 @@ from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
 from .context_plugins import ContextPluginRegistry
 from .external_content import ExternalContentManager
+from .structured_logger import StructuredLogger
 
 
 class OverviewGenerator:
@@ -95,11 +97,12 @@ Use the following context information minimally only at the appropriate places i
         self.quiet = quiet
         self.logger = setup_logger('Hedwig.overview.generator', quiet=quiet)
 
-        # Initialize LLM client
-        self.llm_client = LLMClient(self.config)
-
         # Get configuration
         self.summary_dir = Path(self.config.get('paths.change_summary_output', '/path/to/change-summaries'))
+
+        # Initialize LLM client and optional structured logger
+        self.llm_client = LLMClient(self.config)
+        self.structured_logger = StructuredLogger(self.config, self.summary_dir)
 
         # Get model configuration
         self.model = self.config.get('api.llm.overview_model', 'gemini-2.5-pro')
@@ -108,14 +111,19 @@ Use the following context information minimally only at the appropriate places i
         self.language = self.config.get('overview.language', 'ko').lower()
         if self.language not in self.LANGUAGE_INSTRUCTIONS:
             raise ValueError(f"Unsupported language: {self.language}. Supported languages: {', '.join(self.LANGUAGE_INSTRUCTIONS.keys())}")
+        self.lang_instructions = self.LANGUAGE_INSTRUCTIONS[self.language]
 
         # Lab information configuration
-        self.lab_info = self.config.get('overview.lab_info',
-                                  "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies")
+        self.lab_info = self.config.get(
+            'overview.lab_info',
+            "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
+        )
 
         # Context information prefix configuration
-        self.context_info_prefix = self.config.get('api.llm.overview_context_information_prefix',
-                                                   self.DEFAULT_CONTEXT_INFORMATION_PREFIX)
+        self.context_info_prefix = self.config.get(
+            'api.llm.overview_context_information_prefix',
+            self.DEFAULT_CONTEXT_INFORMATION_PREFIX
+        )
 
         # Initialize context plugins
         self._initialize_context_plugins()
@@ -126,8 +134,19 @@ Use the following context information minimally only at the appropriate places i
             self.summary_dir
         )
 
-        # Load prompts
-        self._load_prompts()
+        # Prompt configuration (built lazily)
+        self.prompt_template = self.config.get('api.llm.overview_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
+        self.weekday_config = self.config.get('api.llm.overview_weekday_config', {})
+        self.default_weekday_config = {
+            'monday': {'summary_range': 'last weekend', 'forthcoming_range': 'this week'},
+            'tuesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+            'wednesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+            'thursday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+            'friday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+            'saturday': {'summary_range': 'yesterday', 'forthcoming_range': 'next week'},
+            'sunday': None
+        }
+        self.weekday_names = list(self.default_weekday_config.keys())
 
     def _initialize_context_plugins(self):
         """Initialize context plugins from configuration"""
@@ -180,68 +199,73 @@ Use the following context information minimally only at the appropriate places i
         # Combine all context parts with double newlines
         return self.context_info_prefix + "\n\n".join(context_parts)
 
-    def _load_prompts(self):
-        """Load prompts from configuration or use defaults"""
-        # Get language-specific instructions
-        lang_instructions = self.LANGUAGE_INSTRUCTIONS[self.language]
+    def _build_prompt_for_weekday(self, weekday: int) -> str:
+        """Construct the prompt for a given weekday using current context."""
+        if weekday < 0 or weekday >= len(self.weekday_names):
+            return ''
 
-        # Check if custom prompt template is configured
-        custom_template = self.config.get('api.llm.overview_prompt_template')
+        day_name = self.weekday_names[weekday]
+        default_config = self.default_weekday_config.get(day_name)
 
-        # Default weekday configurations
-        default_weekday_config = {
-            'monday': {'summary_range': 'last weekend', 'forthcoming_range': 'this week'},
-            'tuesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'wednesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'thursday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'friday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'saturday': {'summary_range': 'yesterday', 'forthcoming_range': 'next week'},
-            'sunday': None  # No summary on Sunday
+        if default_config is None:
+            return ''
+
+        day_config = self.weekday_config.get(day_name, default_config)
+        context_info = self._get_context_information()
+
+        full_config = {
+            **day_config,
+            **self.lang_instructions,
+            'lab_info': self.lab_info,
+            'context_information': context_info
         }
 
-        # Get weekday-specific configurations
-        weekday_config = self.config.get('api.llm.overview_weekday_config', {})
+        return self.prompt_template.format(**full_config)
 
-        # Build prompts for each weekday
-        self.prompts = {}
-        template = custom_template if custom_template else self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE
+    def _get_base_dir_for_date(self, target_date: date_type) -> Path:
+        """Get YYYY/MM directory for the given date."""
+        year = target_date.strftime('%Y')
+        month = target_date.strftime('%m')
+        return self.summary_dir / year / month
 
-        for day, default_config in default_weekday_config.items():
-            day_index = list(default_weekday_config.keys()).index(day)
+    def _get_source_files(self, target_date: date_type) -> Optional[List[Path]]:
+        """Return the list of files that feed into overview/update logger outputs."""
+        base_dir = self._get_base_dir_for_date(target_date)
+        date_str_for_file = target_date.strftime('%Y%m%d')
+        indiv_filepath = base_dir / f'{date_str_for_file}-indiv.md'
 
-            if default_config is None:
-                self.prompts[day_index] = ''
-            else:
-                # Merge configurations
-                day_config = weekday_config.get(day, default_config)
-                # Get context information
-                context_info = self._get_context_information()
-                # Add language-specific instructions, lab info, and context to the configuration
-                full_config = {
-                    **day_config,
-                    **lang_instructions,
-                    'lab_info': self.lab_info,
-                    'context_information': context_info
-                }
-                self.prompts[day_index] = template.format(**full_config)
+        if not indiv_filepath.exists():
+            return None
 
-    def _prepare_llm_input(self, date_str: str) -> Optional[Dict[str, str]]:
+        source_files: List[Path] = [indiv_filepath]
+
+        if self.external_content_manager and self.external_content_manager.enabled:
+            for source in self.external_content_manager.sources:
+                suffix = source.get('file_suffix')
+                if not suffix:
+                    continue
+
+                candidate = base_dir / f'{date_str_for_file}{suffix}'
+                if candidate.exists():
+                    source_files.append(candidate)
+                elif source.get('required', False):
+                    return None
+
+        return source_files
+
+    def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
         """Prepare the LLM input by gathering summaries and external content
 
         Args:
-            date_str: Date string in YYYY-MM-DD format
+            target_date: Date being processed
 
         Returns:
             Dictionary with 'prompt' and 'user_input' keys, or None if no data available
         """
-        year = date_str[:4]
-        month = date_str[5:7]
-
-        # Check for individual summary file
-        # Convert date from YYYY-MM-DD to YYYYMMDD for filename
-        date_str_for_file = date_str.replace('-', '')
-        indiv_filename = f'{date_str_for_file}-indiv.md'
-        indiv_filepath = self.summary_dir / year / month / indiv_filename
+        date_str = target_date.strftime('%Y-%m-%d')
+        base_dir = self._get_base_dir_for_date(target_date)
+        date_str_for_file = target_date.strftime('%Y%m%d')
+        indiv_filepath = base_dir / f'{date_str_for_file}-indiv.md'
 
         self.logger.info(f"Checking for individual summary file: {indiv_filepath}")
 
@@ -282,7 +306,7 @@ Use the following context information minimally only at the appropriate places i
 
         # Get the appropriate prompt for today
         current_weekday = TimezoneManager.get_local_weekday(self.config)
-        selected_prompt = self.prompts[current_weekday]
+        selected_prompt = self._build_prompt_for_weekday(current_weekday)
 
         if not selected_prompt:
             # Sunday - no summary
@@ -297,62 +321,71 @@ Use the following context information minimally only at the appropriate places i
     def get_prompt_for_debugging(self, target_date: Optional[date_type] = None) -> Optional[Dict[str, str]]:
         """Get the prompt/input that would be sent to the LLM for debugging purposes"""
         resolved_date = target_date or TimezoneManager.get_local_date(self.config)
-        date_str = resolved_date.strftime('%Y-%m-%d')
 
         # Use the common method to prepare LLM input
-        return self._prepare_llm_input(date_str)
+        return self._prepare_llm_input(resolved_date)
 
     def get_up_to_date_overview_path(self, target_date: Optional[date_type] = None) -> Optional[Path]:
         """Return the overview path for the target date if it's newer than its inputs."""
         resolved_date = target_date or TimezoneManager.get_local_date(self.config)
         date_str_for_file = resolved_date.strftime('%Y%m%d')
-
-        # Build basic file paths
-        year = resolved_date.strftime('%Y')
-        month = resolved_date.strftime('%m')
-        base_dir = self.summary_dir / year / month
+        base_dir = self._get_base_dir_for_date(resolved_date)
         overview_path = base_dir / f'{date_str_for_file}-overview.md'
 
         if not overview_path.exists():
             return None
 
-        individual_path = base_dir / f'{date_str_for_file}-indiv.md'
-        if not individual_path.exists():
-            return None
-
-        source_files: List[Path] = [individual_path]
-
-        # Include optional external content sources when present
-        if self.external_content_manager and self.external_content_manager.enabled:
-            for source in self.external_content_manager.sources:
-                suffix = source.get('file_suffix')
-                if not suffix:
-                    continue
-
-                candidate = base_dir / f'{date_str_for_file}{suffix}'
-                if candidate.exists():
-                    source_files.append(candidate)
-                elif source.get('required', False):
-                    # Missing required source means we can't guarantee freshness
-                    return None
-
+        source_files = self._get_source_files(resolved_date)
         if not source_files:
             return None
 
         latest_source_mtime = max(path.stat().st_mtime for path in source_files)
         overview_mtime = overview_path.stat().st_mtime
 
-        if overview_mtime >= latest_source_mtime:
-            return overview_path
+        if overview_mtime < latest_source_mtime:
+            return None
+
+        return overview_path
+
+    def _get_up_to_date_structured_log_path(self, target_date: date_type) -> Optional[Path]:
+        """Return structured log path if it exists and is newer than all source files."""
+        if not self.structured_logger.enabled:
+            return None
+
+        structured_path = self.structured_logger.structured_output_path(target_date)
+        if not structured_path or not structured_path.exists():
+            return None
+
+        source_files = self._get_source_files(target_date)
+        if not source_files:
+            return None
+
+        latest_source_mtime = max(path.stat().st_mtime for path in source_files)
+        if structured_path.stat().st_mtime >= latest_source_mtime:
+            return structured_path
 
         return None
 
-    def generate(self, write_to_file: bool = True, target_date: Optional[date_type] = None) -> Optional[str]:
+    def is_structured_log_up_to_date(self, target_date: Optional[date_type] = None) -> bool:
+        """Check whether the structured JSONL log is current for the given date."""
+        if not self.structured_logger.enabled:
+            return True
+
+        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        return self._get_up_to_date_structured_log_path(resolved_date) is not None
+
+    def generate(
+        self,
+        write_to_file: bool = True,
+        target_date: Optional[date_type] = None,
+        generate_structured_log: bool = True
+    ) -> Optional[str]:
         """Generate overview from individual summaries for a given date
 
         Args:
             write_to_file: Whether to write overview to file
             target_date: Optional date to process instead of today
+            generate_structured_log: Whether to trigger structured JSONL generation
 
         Returns:
             Generated overview text or None if no summaries found
@@ -361,14 +394,23 @@ Use the following context information minimally only at the appropriate places i
 
         # Determine which date we are generating for
         resolved_date = target_date or TimezoneManager.get_local_date(self.config)
-        date_str = resolved_date.strftime('%Y-%m-%d')
 
         # Prepare LLM input using the common method
-        llm_input = self._prepare_llm_input(date_str)
+        llm_input = self._prepare_llm_input(resolved_date)
 
         if not llm_input:
             # Error already logged in _prepare_llm_input
             return None
+
+        if write_to_file and generate_structured_log and self.structured_logger.enabled:
+            structured_up_to_date = self._get_up_to_date_structured_log_path(resolved_date)
+            if structured_up_to_date:
+                self.logger.info("Structured JSONL log already up to date: %s", structured_up_to_date)
+            else:
+                self.structured_logger.generate_structured_output(
+                    user_input=llm_input['user_input'],
+                    target_date=resolved_date
+                )
 
         # Generate overview summary
         self.logger.info("Generating overview summary...")
@@ -389,11 +431,43 @@ Use the following context information minimally only at the appropriate places i
             self.logger.info("Overview summary is empty. Nothing to write.")
             return None
 
+        overview = self._sanitize_overview(overview)
+
+        if not overview:
+            self.logger.info("Overview summary is empty after sanitization. Nothing to write.")
+            return None
+
         # Write overview file
         if write_to_file:
             self._write_overview_to_file(overview, resolved_date)
 
         return overview
+
+    def generate_structured_log(self, target_date: Optional[date_type] = None) -> bool:
+        """Generate structured JSONL output only.
+
+        Returns:
+            True if generation succeeded or was skipped because it was already up to date.
+        """
+        if not self.structured_logger.enabled:
+            self.logger.info("Structured JSONL output is disabled.")
+            return True
+
+        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        structured_up_to_date = self._get_up_to_date_structured_log_path(resolved_date)
+        if structured_up_to_date:
+            self.logger.info("Structured JSONL log already up to date: %s", structured_up_to_date)
+            return True
+
+        llm_input = self._prepare_llm_input(resolved_date)
+        if not llm_input:
+            return False
+
+        self.structured_logger.generate_structured_output(
+            user_input=llm_input['user_input'],
+            target_date=resolved_date
+        )
+        return True
 
     def _write_overview_to_file(self, overview: str, target_date: date_type) -> str:
         """Write overview to structured file path
@@ -426,3 +500,10 @@ Use the following context information minimally only at the appropriate places i
         except Exception as e:
             self.logger.error(f"Error writing overview file: {e}")
             raise
+
+    def _sanitize_overview(self, overview: str) -> str:
+        """Normalize overview text by dropping stray code fences."""
+        text = overview.strip()
+        text = re.sub(r"```[^\n]*\n", "", text)
+        text = text.replace("```", "")
+        return text.strip()

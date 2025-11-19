@@ -224,6 +224,11 @@ overview:
       #   description: "Updates from external collaborators"
       #   required: false
 
+  # Optional JSONL output for machine-readable outputs (also enables update logging)
+  jsonl_output:
+    enabled: false  # Set to true to enable JSONL output
+    file_suffix: "-summary.jsonl"  # Output file suffix
+
 # ==============================================================================
 # MESSAGING - Send summaries to team communication platforms
 # ==============================================================================
@@ -251,4 +256,3 @@ pipeline:
   # Title format for posted summaries
   # Variables: {date} - yesterday's date as YYYY-MM-DD
   title_format: 'QBio Research {date}'
-
