@@ -21,6 +21,7 @@
 
 """Main overview generation module for creating overview summaries"""
 
+from datetime import date as date_type
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -293,28 +294,22 @@ Use the following context information minimally only at the appropriate places i
             'user_input': full_input
         }
 
-    def get_prompt_for_debugging(self) -> Optional[Dict[str, str]]:
-        """Get the prompt and input that would be sent to the LLM for debugging purposes
-
-        Returns:
-            Dictionary with 'prompt' and 'user_input' keys, or None if no data available
-        """
-        # Get today's date in local timezone (for filename)
-        now = TimezoneManager.now_local(self.config)
-        date_str = now.strftime('%Y-%m-%d')
+    def get_prompt_for_debugging(self, target_date: Optional[date_type] = None) -> Optional[Dict[str, str]]:
+        """Get the prompt/input that would be sent to the LLM for debugging purposes"""
+        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        date_str = resolved_date.strftime('%Y-%m-%d')
 
         # Use the common method to prepare LLM input
         return self._prepare_llm_input(date_str)
 
-    def get_up_to_date_overview_path(self) -> Optional[Path]:
-        """Return today's overview path if it's newer than all source files."""
-        today = TimezoneManager.get_local_date(self.config)
-        date_str = today.strftime('%Y-%m-%d')
+    def get_up_to_date_overview_path(self, target_date: Optional[date_type] = None) -> Optional[Path]:
+        """Return the overview path for the target date if it's newer than its inputs."""
+        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        date_str_for_file = resolved_date.strftime('%Y%m%d')
 
         # Build basic file paths
-        year = today.strftime('%Y')
-        month = today.strftime('%m')
-        date_str_for_file = date_str.replace('-', '')
+        year = resolved_date.strftime('%Y')
+        month = resolved_date.strftime('%m')
         base_dir = self.summary_dir / year / month
         overview_path = base_dir / f'{date_str_for_file}-overview.md'
 
@@ -352,20 +347,21 @@ Use the following context information minimally only at the appropriate places i
 
         return None
 
-    def generate(self, write_to_file: bool = True) -> Optional[str]:
-        """Generate overview from today's individual summaries
+    def generate(self, write_to_file: bool = True, target_date: Optional[date_type] = None) -> Optional[str]:
+        """Generate overview from individual summaries for a given date
 
         Args:
             write_to_file: Whether to write overview to file
+            target_date: Optional date to process instead of today
 
         Returns:
             Generated overview text or None if no summaries found
         """
         self.logger.info("Starting overview generation...")
 
-        # Get today's date in local timezone (for filename)
-        now = TimezoneManager.now_local(self.config)
-        date_str = now.strftime('%Y-%m-%d')
+        # Determine which date we are generating for
+        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        date_str = resolved_date.strftime('%Y-%m-%d')
 
         # Prepare LLM input using the common method
         llm_input = self._prepare_llm_input(date_str)
@@ -395,32 +391,30 @@ Use the following context information minimally only at the appropriate places i
 
         # Write overview file
         if write_to_file:
-            # Convert date format from YYYY-MM-DD to YYYYMMDD for filename
-            date_str_for_file = date_str.replace('-', '')
-            self._write_overview_to_file(overview, date_str_for_file)
+            self._write_overview_to_file(overview, resolved_date)
 
         return overview
 
-    def _write_overview_to_file(self, overview: str, date_str: str) -> str:
+    def _write_overview_to_file(self, overview: str, target_date: date_type) -> str:
         """Write overview to structured file path
 
         Args:
             overview: Overview text
-            date_str: Date string in YYYYMMDD format
+            target_date: Date associated with this overview
 
         Returns:
             Path to written file
         """
-        now = TimezoneManager.now_local(self.config)
-        year = now.strftime('%Y')
-        month = now.strftime('%m')
+        year = target_date.strftime('%Y')
+        month = target_date.strftime('%m')
+        date_str_for_file = target_date.strftime('%Y%m%d')
 
         # Create directory structure
         output_dir = self.summary_dir / year / month
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Create filename
-        filename = f'{date_str}-overview.md'
+        filename = f'{date_str_for_file}-overview.md'
         filepath = output_dir / filename
 
         # Write overview to file

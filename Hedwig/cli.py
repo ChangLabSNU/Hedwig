@@ -26,6 +26,7 @@ Command line interface for Hedwig package
 
 import argparse
 import sys
+from datetime import datetime
 from . import __version__
 
 
@@ -139,6 +140,10 @@ def create_parser():
         action='store_true',
         help='Regenerate overview even if an up-to-date file already exists'
     )
+    overview_parser.add_argument(
+        '--date',
+        help='Date (YYYY-MM-DD) whose summaries should be processed instead of today'
+    )
 
     # Post summary to messaging platform
     post_parser = subparsers.add_parser(
@@ -248,9 +253,17 @@ def handle_generate_overview(args):
 
     generator = OverviewGenerator(config_path=args.config, quiet=args.quiet)
 
+    target_date = None
+    if args.date:
+        try:
+            target_date = datetime.strptime(args.date, '%Y-%m-%d').date()
+        except ValueError:
+            print("Error: --date must be in YYYY-MM-DD format")
+            sys.exit(1)
+
     # If --print-prompt is specified, print the prompt and exit
     if args.print_prompt:
-        prompt_info = generator.get_prompt_for_debugging()
+        prompt_info = generator.get_prompt_for_debugging(target_date)
         if prompt_info:
             print("=== PROMPT ===")
             print(prompt_info['prompt'])
@@ -262,13 +275,13 @@ def handle_generate_overview(args):
 
     # Skip expensive regeneration if cached overview is fresher than inputs
     if not args.no_write and not args.force:
-        cached_overview = generator.get_up_to_date_overview_path()
+        cached_overview = generator.get_up_to_date_overview_path(target_date)
         if cached_overview:
             if not args.quiet:
                 print(f"Overview already up to date at {cached_overview}. Skipping generation.")
             return
 
-    overview = generator.generate(write_to_file=not args.no_write)
+    overview = generator.generate(write_to_file=not args.no_write, target_date=target_date)
 
     # Print overview if not writing to file (unless quiet)
     if args.no_write and overview and not args.quiet:
