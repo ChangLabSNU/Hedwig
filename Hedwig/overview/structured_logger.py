@@ -49,11 +49,10 @@ When describing an update, omit the subject if it would be identical to the auth
 Structured output requirements:
 1. Respond **only** with JSON Lines (JSONL). Each line must be a standalone valid JSON object encoded in UTF-8, no extra prose or Markdown fencing.
 2. Every JSON object must contain **only** the following keys:
-   - `"date"`: string formatted as `YYYY-MM-DD` (use the target summary date for every entry).
    - `"authors"`: array of canonical English names responsible for the change (empty array if unknown).
-  - `"summary_en"`: Concise English sentence(s) capturing the key updates, risks, and next steps in active voice.
-  {language_summary_key_instruction}
-3. Produce one JSON object per thematic cluster or notable change. Ensure all significant updates are included.
+   - `"summary_en"`: Concise English sentence(s) capturing the key updates, risks, and next steps in active voice.
+   {language_summary_key_instruction}
+3. Produce one JSON object per thematic cluster or notable change, grouping closely related issues within the same project into a single summarized entry. Ensure all significant updates are included.
 4. Keep both summaries strictly factual and aligned in meaning. No additional fields, metadata objects, MVP notes, or decorative content are allowed.
 
 {context_information}
