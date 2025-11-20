@@ -27,7 +27,6 @@ from datetime import date as date_type
 from pathlib import Path
 from typing import Dict, Optional
 
-from ..llm import LLMClient
 from .base import OverviewBase
 
 
@@ -93,43 +92,23 @@ Use the following context information minimally and reference it only when neces
     }
 
     def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
-        super().__init__(config_path=config_path, quiet=quiet, logger_name='Hedwig.overview.structured_logger')
+        super().__init__(
+            config_path=config_path,
+            quiet=quiet,
+            logger_name='Hedwig.overview.structured_logger',
+            language_instructions=self.LANGUAGE_INSTRUCTIONS,
+            default_context_prefix=self.DEFAULT_CONTEXT_INFORMATION_PREFIX
+        )
 
         settings = self.config.get('overview.jsonl_output', {}) or {}
         self.enabled = bool(settings.get('enabled', False))
         self.payload_dir = self.summary_dir / '_structured_logger'
         self.output_suffix = settings.get('file_suffix', '-summary.jsonl')
-        self.language = self.config.get('overview.language', 'ko').lower()
-        self.lab_info = self.config.get(
-            'overview.lab_info',
-            "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
-        )
-        self.context_info_prefix = self.DEFAULT_CONTEXT_INFORMATION_PREFIX
 
         if not self.enabled:
             return
 
-        if self.language not in self.LANGUAGE_INSTRUCTIONS:
-            raise ValueError(
-                f"Unsupported language for update logger: {self.language}. "
-                f"Supported languages: {', '.join(self.LANGUAGE_INSTRUCTIONS.keys())}"
-            )
-
-        self.lang_instructions = self.LANGUAGE_INSTRUCTIONS[self.language]
         self.prompt_template = self.config.get('api.llm.jsonl_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
-        self.weekday_config = self.config.get('api.llm.overview_weekday_config', {})
-        self.default_weekday_config = {
-            'monday': {'summary_range': 'last weekend', 'forthcoming_range': 'this week'},
-            'tuesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'wednesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'thursday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'friday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'saturday': {'summary_range': 'yesterday', 'forthcoming_range': 'next week'},
-            'sunday': None
-        }
-        self.weekday_names = list(self.default_weekday_config.keys())
-
-        self.client = LLMClient(self.config)
         self.model = self.config.get('api.llm.jsonl_output_model', self.config.get('api.llm.overview_model', 'gemini-2.5-pro'))
 
     def generate(
@@ -152,7 +131,7 @@ Use the following context information minimally and reference it only when neces
 
         try:
             self.logger.info("Submitting structured log prompt to LLM model '%s'", self.model)
-            output = self.client.generate(
+            output = self.llm_client.generate(
                 prompt=llm_input['prompt'],
                 user_input=llm_input['user_input'],
                 model=self.model

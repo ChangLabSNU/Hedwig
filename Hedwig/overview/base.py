@@ -23,10 +23,12 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date as date_type
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+from ..llm import LLMClient
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
@@ -36,11 +38,29 @@ from .external_content import ExternalContentManager
 class OverviewBase:
     """Base class that provides config, logging, and content helpers."""
 
+    DEFAULT_LAB_INFO = (
+        "Seoul National University's QBioLab, which studies molecular biology using "
+        "bioinformatics methodologies"
+    )
+
+    DEFAULT_WEEKDAY_CONFIG = {
+        'monday': {'summary_range': 'last weekend', 'forthcoming_range': 'this week'},
+        'tuesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+        'wednesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+        'thursday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+        'friday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
+        'saturday': {'summary_range': 'yesterday', 'forthcoming_range': 'next week'},
+        'sunday': None
+    }
+
     def __init__(
         self,
         config_path: Optional[str] = None,
         quiet: bool = False,
-        logger_name: str = 'Hedwig.overview.base'
+        logger_name: str = 'Hedwig.overview.base',
+        language_instructions: Optional[Dict[str, Dict[str, Any]]] = None,
+        context_prefix_config_key: Optional[str] = None,
+        default_context_prefix: Optional[str] = None
     ):
         self.config = Config(config_path)
         self.quiet = quiet
@@ -50,6 +70,32 @@ class OverviewBase:
             self.config.get('overview', {}),
             self.summary_dir
         )
+        self.llm_client = LLMClient(self.config)
+
+        self.language = self.config.get('overview.language', 'ko').lower()
+        self.lang_instructions: Dict[str, Any] = {}
+        if language_instructions:
+            if self.language not in language_instructions:
+                raise ValueError(
+                    f"Unsupported language for overview outputs: {self.language}. "
+                    f"Supported languages: {', '.join(language_instructions.keys())}"
+                )
+            self.lang_instructions = language_instructions[self.language]
+
+        self.lab_info = self.config.get('overview.lab_info', self.DEFAULT_LAB_INFO)
+
+        context_default = default_context_prefix or ""
+        if context_prefix_config_key:
+            self.context_info_prefix = self.config.get(
+                context_prefix_config_key,
+                context_default
+            )
+        else:
+            self.context_info_prefix = context_default
+
+        self.weekday_config = self.config.get('api.llm.overview_weekday_config', {})
+        self.default_weekday_config = deepcopy(self.DEFAULT_WEEKDAY_CONFIG)
+        self.weekday_names = list(self.default_weekday_config.keys())
 
     def _resolve_target_date(self, target_date: Optional[date_type]) -> date_type:
         """Return the provided date or fall back to the configured local date."""

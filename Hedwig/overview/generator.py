@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from ..utils.timezone import TimezoneManager
-from ..llm import LLMClient
 from .base import OverviewBase
 from .context_plugins import ContextPluginRegistry
 
@@ -90,48 +89,23 @@ Use the following context information minimally only at the appropriate places i
             config_path: Path to configuration file
             quiet: Suppress informational messages
         """
-        super().__init__(config_path=config_path, quiet=quiet, logger_name='Hedwig.overview.generator')
-
-        # Initialize LLM client
-        self.llm_client = LLMClient(self.config)
+        super().__init__(
+            config_path=config_path,
+            quiet=quiet,
+            logger_name='Hedwig.overview.generator',
+            language_instructions=self.LANGUAGE_INSTRUCTIONS,
+            context_prefix_config_key='api.llm.overview_context_information_prefix',
+            default_context_prefix=self.DEFAULT_CONTEXT_INFORMATION_PREFIX
+        )
 
         # Get model configuration
         self.model = self.config.get('api.llm.overview_model', 'gemini-2.5-pro')
-
-        # Language configuration
-        self.language = self.config.get('overview.language', 'ko').lower()
-        if self.language not in self.LANGUAGE_INSTRUCTIONS:
-            raise ValueError(f"Unsupported language: {self.language}. Supported languages: {', '.join(self.LANGUAGE_INSTRUCTIONS.keys())}")
-        self.lang_instructions = self.LANGUAGE_INSTRUCTIONS[self.language]
-
-        # Lab information configuration
-        self.lab_info = self.config.get(
-            'overview.lab_info',
-            "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
-        )
-
-        # Context information prefix configuration
-        self.context_info_prefix = self.config.get(
-            'api.llm.overview_context_information_prefix',
-            self.DEFAULT_CONTEXT_INFORMATION_PREFIX
-        )
 
         # Initialize context plugins
         self._initialize_context_plugins()
 
         # Prompt configuration (built lazily)
         self.prompt_template = self.config.get('api.llm.overview_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
-        self.weekday_config = self.config.get('api.llm.overview_weekday_config', {})
-        self.default_weekday_config = {
-            'monday': {'summary_range': 'last weekend', 'forthcoming_range': 'this week'},
-            'tuesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'wednesday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'thursday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'friday': {'summary_range': 'yesterday', 'forthcoming_range': 'today'},
-            'saturday': {'summary_range': 'yesterday', 'forthcoming_range': 'next week'},
-            'sunday': None
-        }
-        self.weekday_names = list(self.default_weekday_config.keys())
 
     def _initialize_context_plugins(self):
         """Initialize context plugins from configuration"""
