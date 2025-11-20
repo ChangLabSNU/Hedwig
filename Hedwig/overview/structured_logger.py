@@ -70,6 +70,26 @@ Use the following context information minimally and reference it only when neces
             'language_summary_key_instruction': '- `"summary_ko"`: Korean translation conveying the same facts with similar brevity and active tone while keeping technical biology terms in English.',
             'language_instruction': '**Important** Provide both Korean and English summaries as described, but preserve canonical English names exactly as listed.',
         },
+        'en': {
+            'language_specific_instructions': '',
+            'language_summary_key_instruction': '',
+            'language_instruction': '',
+        },
+        'ja': {
+            'language_specific_instructions': 'Use canonical English names for every person (see the team roster below). If a canonical name is missing, transliterate to the best English equivalent and mention that uncertainty in the Japanese summary text.\nUse English terminology for technical biology phrases (genes, assays, reagents, instruments, etc.) even inside the Japanese summary so downstream systems can link them reliably.',
+            'language_summary_key_instruction': '- `"summary_ja"`: Japanese translation conveying the same facts with similar brevity and active tone while keeping technical biology terms in English.',
+            'language_instruction': '**Important** Provide both Japanese and English summaries as described, but preserve canonical English names exactly as listed.',
+        },
+        'zh_CN': {
+            'language_specific_instructions': 'Use canonical English names for every person (see the team roster below). If a canonical name is missing, transliterate to the best English equivalent and mention that uncertainty in the Simplified Chinese summary text.\nUse English terminology for technical biology phrases (genes, assays, reagents, instruments, etc.) even inside the Simplified Chinese summary so downstream systems can link them reliably.',
+            'language_summary_key_instruction': '- `"summary_zh"`: Simplified Chinese translation conveying the same facts with similar brevity and active tone while keeping technical biology terms in English.',
+            'language_instruction': '**Important** Provide both Simplified Chinese and English summaries as described, but preserve canonical English names exactly as listed.',
+        },
+        'zh_TW': {
+            'language_specific_instructions': 'Use canonical English names for every person (see the team roster below). If a canonical name is missing, transliterate to the best English equivalent and mention that uncertainty in the Traditional Chinese summary text.\nUse English terminology for technical biology phrases (genes, assays, reagents, instruments, etc.) even inside the Traditional Chinese summary so downstream systems can link them reliably.',
+            'language_summary_key_instruction': '- `"summary_zh"`: Traditional Chinese translation conveying the same facts with similar brevity and active tone while keeping technical biology terms in English.',
+            'language_instruction': '**Important** Provide both Traditional Chinese and English summaries as described, but preserve canonical English names exactly as listed.',
+        }
     }
 
     def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
