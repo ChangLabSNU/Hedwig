@@ -250,8 +250,10 @@ def handle_generate_change_summary(args):
 def handle_generate_overview(args):
     """Handle generate-overview command"""
     from .overview.generator import OverviewGenerator
+    from .overview.structured_logger import StructuredLogger
 
     generator = OverviewGenerator(config_path=args.config, quiet=args.quiet)
+    structured_logger = StructuredLogger(config_path=args.config, quiet=args.quiet)
 
     target_date = None
     if args.date:
@@ -274,32 +276,33 @@ def handle_generate_overview(args):
         return
 
     needs_overview = True
-    needs_structured = generator.structured_logger.enabled and not args.no_write
+    needs_structured = structured_logger.enabled and not args.no_write
 
     if not args.force and not args.no_write:
         cached_overview_path = generator.get_up_to_date_overview_path(target_date)
         if cached_overview_path:
             needs_overview = False
+            generator.logger.info("Overview already up to date. Skipping generation.")
 
-    if needs_structured and not args.force:
-        needs_structured = not generator.is_structured_log_up_to_date(target_date)
+        if needs_structured:
+            needs_structured = not structured_logger.is_up_to_date(target_date)
+            if not needs_structured:
+                structured_logger.logger.info("Structured log already up to date. Skipping generation.")
 
     if not needs_overview and not needs_structured:
-        if not args.quiet:
-            print("Overview and structured log already up to date. Skipping generation.")
+        generator.logger.info("Overview and structured log already up to date. Skipping generation.")
         return
 
     overview = None
     if needs_overview:
         overview = generator.generate(
             write_to_file=not args.no_write,
-            target_date=target_date,
-            generate_structured_log=needs_structured
-        )
-        needs_structured = False
+            target_date=target_date)
 
     if needs_structured:
-        generator.generate_structured_log(target_date)
+        structured_logger.generate(
+            write_to_file=not args.no_write,
+            target_date=target_date)
 
     # Print overview if not writing to file (unless quiet)
     if args.no_write and overview and not args.quiet:

@@ -24,18 +24,15 @@
 from datetime import date as date_type
 import re
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
-from ..utils.config import Config
-from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
+from .base import OverviewBase
 from .context_plugins import ContextPluginRegistry
-from .external_content import ExternalContentManager
-from .structured_logger import StructuredLogger
 
 
-class OverviewGenerator:
+class OverviewGenerator(OverviewBase):
     """Generate overview summaries from individual change summaries"""
 
     # Default prompt template for overview generation
@@ -93,16 +90,10 @@ Use the following context information minimally only at the appropriate places i
             config_path: Path to configuration file
             quiet: Suppress informational messages
         """
-        self.config = Config(config_path)
-        self.quiet = quiet
-        self.logger = setup_logger('Hedwig.overview.generator', quiet=quiet)
+        super().__init__(config_path=config_path, quiet=quiet, logger_name='Hedwig.overview.generator')
 
-        # Get configuration
-        self.summary_dir = Path(self.config.get('paths.change_summary_output', '/path/to/change-summaries'))
-
-        # Initialize LLM client and optional structured logger
+        # Initialize LLM client
         self.llm_client = LLMClient(self.config)
-        self.structured_logger = StructuredLogger(self.config, self.summary_dir)
 
         # Get model configuration
         self.model = self.config.get('api.llm.overview_model', 'gemini-2.5-pro')
@@ -127,12 +118,6 @@ Use the following context information minimally only at the appropriate places i
 
         # Initialize context plugins
         self._initialize_context_plugins()
-
-        # Initialize external content manager
-        self.external_content_manager = ExternalContentManager(
-            self.config.get('overview', {}),
-            self.summary_dir
-        )
 
         # Prompt configuration (built lazily)
         self.prompt_template = self.config.get('api.llm.overview_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
@@ -222,37 +207,6 @@ Use the following context information minimally only at the appropriate places i
 
         return self.prompt_template.format(**full_config)
 
-    def _get_base_dir_for_date(self, target_date: date_type) -> Path:
-        """Get YYYY/MM directory for the given date."""
-        year = target_date.strftime('%Y')
-        month = target_date.strftime('%m')
-        return self.summary_dir / year / month
-
-    def _get_source_files(self, target_date: date_type) -> Optional[List[Path]]:
-        """Return the list of files that feed into overview/update logger outputs."""
-        base_dir = self._get_base_dir_for_date(target_date)
-        date_str_for_file = target_date.strftime('%Y%m%d')
-        indiv_filepath = base_dir / f'{date_str_for_file}-indiv.md'
-
-        if not indiv_filepath.exists():
-            return None
-
-        source_files: List[Path] = [indiv_filepath]
-
-        if self.external_content_manager and self.external_content_manager.enabled:
-            for source in self.external_content_manager.sources:
-                suffix = source.get('file_suffix')
-                if not suffix:
-                    continue
-
-                candidate = base_dir / f'{date_str_for_file}{suffix}'
-                if candidate.exists():
-                    source_files.append(candidate)
-                elif source.get('required', False):
-                    return None
-
-        return source_files
-
     def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
         """Prepare the LLM input by gathering summaries and external content
 
@@ -262,47 +216,9 @@ Use the following context information minimally only at the appropriate places i
         Returns:
             Dictionary with 'prompt' and 'user_input' keys, or None if no data available
         """
-        date_str = target_date.strftime('%Y-%m-%d')
-        base_dir = self._get_base_dir_for_date(target_date)
-        date_str_for_file = target_date.strftime('%Y%m%d')
-        indiv_filepath = base_dir / f'{date_str_for_file}-indiv.md'
-
-        self.logger.info(f"Checking for individual summary file: {indiv_filepath}")
-
-        if not indiv_filepath.exists():
-            self.logger.info("Individual summary file does not exist. Nothing to process.")
+        full_input = self._get_llm_user_input(target_date)
+        if not full_input:
             return None
-
-        # Read individual summaries
-        try:
-            content = indiv_filepath.read_text(encoding='utf-8').strip()
-
-            if not content:
-                self.logger.info("Individual summary file is empty. Nothing to process.")
-                return None
-
-            self.logger.info(f"Found individual summary file with {len(content)} characters")
-
-        except Exception as e:
-            self.logger.error(f"Error reading individual summary file: {e}")
-            return None
-
-        # Fetch external content
-        self.logger.info("Checking for external content sources...")
-        external_content = self.external_content_manager.fetch_all_content(date_str)
-
-        # Prepare the full input for LLM
-        # Structure: Individual summaries first, then external content at the end
-        full_input = content
-
-        if external_content:
-            self.logger.info(f"Found external content from {len(external_content)} source(s)")
-            # Format and append external content at the end
-            formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
-            # Add clear separation between main content and external content
-            full_input = content + "\n\n" + formatted_external
-        else:
-            self.logger.info("No external content found.")
 
         # Get the appropriate prompt for today
         current_weekday = TimezoneManager.get_local_weekday(self.config)
@@ -320,14 +236,14 @@ Use the following context information minimally only at the appropriate places i
 
     def get_prompt_for_debugging(self, target_date: Optional[date_type] = None) -> Optional[Dict[str, str]]:
         """Get the prompt/input that would be sent to the LLM for debugging purposes"""
-        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        resolved_date = self._resolve_target_date(target_date)
 
         # Use the common method to prepare LLM input
         return self._prepare_llm_input(resolved_date)
 
     def get_up_to_date_overview_path(self, target_date: Optional[date_type] = None) -> Optional[Path]:
         """Return the overview path for the target date if it's newer than its inputs."""
-        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        resolved_date = self._resolve_target_date(target_date)
         date_str_for_file = resolved_date.strftime('%Y%m%d')
         base_dir = self._get_base_dir_for_date(resolved_date)
         overview_path = base_dir / f'{date_str_for_file}-overview.md'
@@ -347,45 +263,16 @@ Use the following context information minimally only at the appropriate places i
 
         return overview_path
 
-    def _get_up_to_date_structured_log_path(self, target_date: date_type) -> Optional[Path]:
-        """Return structured log path if it exists and is newer than all source files."""
-        if not self.structured_logger.enabled:
-            return None
-
-        structured_path = self.structured_logger.structured_output_path(target_date)
-        if not structured_path or not structured_path.exists():
-            return None
-
-        source_files = self._get_source_files(target_date)
-        if not source_files:
-            return None
-
-        latest_source_mtime = max(path.stat().st_mtime for path in source_files)
-        if structured_path.stat().st_mtime >= latest_source_mtime:
-            return structured_path
-
-        return None
-
-    def is_structured_log_up_to_date(self, target_date: Optional[date_type] = None) -> bool:
-        """Check whether the structured JSONL log is current for the given date."""
-        if not self.structured_logger.enabled:
-            return True
-
-        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
-        return self._get_up_to_date_structured_log_path(resolved_date) is not None
-
     def generate(
         self,
         write_to_file: bool = True,
-        target_date: Optional[date_type] = None,
-        generate_structured_log: bool = True
+        target_date: Optional[date_type] = None
     ) -> Optional[str]:
         """Generate overview from individual summaries for a given date
 
         Args:
             write_to_file: Whether to write overview to file
             target_date: Optional date to process instead of today
-            generate_structured_log: Whether to trigger structured JSONL generation
 
         Returns:
             Generated overview text or None if no summaries found
@@ -393,7 +280,7 @@ Use the following context information minimally only at the appropriate places i
         self.logger.info("Starting overview generation...")
 
         # Determine which date we are generating for
-        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
+        resolved_date = self._resolve_target_date(target_date)
 
         # Prepare LLM input using the common method
         llm_input = self._prepare_llm_input(resolved_date)
@@ -402,20 +289,11 @@ Use the following context information minimally only at the appropriate places i
             # Error already logged in _prepare_llm_input
             return None
 
-        if write_to_file and generate_structured_log and self.structured_logger.enabled:
-            structured_up_to_date = self._get_up_to_date_structured_log_path(resolved_date)
-            if structured_up_to_date:
-                self.logger.info("Structured JSONL log already up to date: %s", structured_up_to_date)
-            else:
-                self.structured_logger.generate_structured_output(
-                    user_input=llm_input['user_input'],
-                    target_date=resolved_date
-                )
-
         # Generate overview summary
         self.logger.info("Generating overview summary...")
 
         try:
+            self.logger.info("Submitting overview prompt to LLM model '%s'", self.model)
             overview = self.llm_client.generate(
                 prompt=llm_input['prompt'],
                 user_input=llm_input['user_input'],
@@ -442,32 +320,6 @@ Use the following context information minimally only at the appropriate places i
             self._write_overview_to_file(overview, resolved_date)
 
         return overview
-
-    def generate_structured_log(self, target_date: Optional[date_type] = None) -> bool:
-        """Generate structured JSONL output only.
-
-        Returns:
-            True if generation succeeded or was skipped because it was already up to date.
-        """
-        if not self.structured_logger.enabled:
-            self.logger.info("Structured JSONL output is disabled.")
-            return True
-
-        resolved_date = target_date or TimezoneManager.get_local_date(self.config)
-        structured_up_to_date = self._get_up_to_date_structured_log_path(resolved_date)
-        if structured_up_to_date:
-            self.logger.info("Structured JSONL log already up to date: %s", structured_up_to_date)
-            return True
-
-        llm_input = self._prepare_llm_input(resolved_date)
-        if not llm_input:
-            return False
-
-        self.structured_logger.generate_structured_output(
-            user_input=llm_input['user_input'],
-            target_date=resolved_date
-        )
-        return True
 
     def _write_overview_to_file(self, overview: str, target_date: date_type) -> str:
         """Write overview to structured file path

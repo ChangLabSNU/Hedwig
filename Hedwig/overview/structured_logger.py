@@ -23,16 +23,15 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import date as date_type
 from pathlib import Path
 from typing import Dict, Optional
 
 from ..llm import LLMClient
-from ..utils.config import Config
+from .base import OverviewBase
 
 
-class StructuredLogger:
+class StructuredLogger(OverviewBase):
     """Generate machine-readable JSONL logs alongside overview summaries."""
 
     # Default prompt template for structured log generation
@@ -74,16 +73,15 @@ Use the following context information minimally and reference it only when neces
         },
     }
 
-    def __init__(self, config: Config, summary_dir: Path):
-        settings = config.get('overview.jsonl_output', {}) or {}
+    def __init__(self, config_path: Optional[str] = None, quiet: bool = False):
+        super().__init__(config_path=config_path, quiet=quiet, logger_name='Hedwig.overview.structured_logger')
+
+        settings = self.config.get('overview.jsonl_output', {}) or {}
         self.enabled = bool(settings.get('enabled', False))
-        self.logger = logging.getLogger('Hedwig.overview.structured_logger')
-        self.config = config
-        self.summary_dir = summary_dir
-        self.payload_dir = summary_dir / '_structured_logger'
+        self.payload_dir = self.summary_dir / '_structured_logger'
         self.output_suffix = settings.get('file_suffix', '-summary.jsonl')
-        self.language = config.get('overview.language', 'ko').lower()
-        self.lab_info = config.get(
+        self.language = self.config.get('overview.language', 'ko').lower()
+        self.lab_info = self.config.get(
             'overview.lab_info',
             "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
         )
@@ -115,40 +113,44 @@ Use the following context information minimally and reference it only when neces
         self.client = LLMClient(self.config)
         self.model = self.config.get('api.llm.jsonl_output_model', self.config.get('api.llm.overview_model', 'gemini-2.5-pro'))
 
-    def generate_structured_output(self, user_input: str, target_date: date_type) -> None:
-        """Generate JSONL logs from aggregated change summaries."""
+    def generate(
+        self,
+        write_to_file: bool = True,
+        target_date: Optional[date_type] = None
+    ) -> Optional[str]:
+        """Generate structured JSONL logs for the specified date."""
         if not self.enabled:
-            return
+            self.logger.info("Structured JSONL output is disabled.")
+            return None
 
-        if not user_input or not user_input.strip():
-            self.logger.debug("Structured logger skipped due to empty input.")
-            return
+        resolved_date = self._resolve_target_date(target_date)
+        llm_input = self._prepare_llm_input(resolved_date)
+        if not llm_input:
+            return None
 
-        prompt = self._get_prompt_for_date(target_date)
-        if not prompt:
-            self.logger.info("Structured logger skipped: no prompt available for target date.")
-            return
-
-        self._write_payload_file('prompt', prompt, target_date)
-        self._write_payload_file('input', user_input, target_date)
+        self._write_payload_file('prompt', llm_input['prompt'], resolved_date)
+        self._write_payload_file('input', llm_input['user_input'], resolved_date)
 
         try:
-            output = self.client.generate(prompt=prompt, user_input=user_input, model=self.model)
+            self.logger.info("Submitting structured log prompt to LLM model '%s'", self.model)
+            output = self.client.generate(
+                prompt=llm_input['prompt'],
+                user_input=llm_input['user_input'],
+                model=self.model
+            )
         except Exception as exc:
             self.logger.error(f"Structured logger generation failed: {exc}")
-            return
+            return None
 
         cleaned = self._clean_jsonl_output(output)
         if not cleaned:
             self.logger.info("Structured logger returned empty structured output.")
-            return
+            return None
 
-        output_path = self._structured_output_path(target_date)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        if not cleaned.endswith("\n"):
-            cleaned += "\n"
-        output_path.write_text(cleaned, encoding='utf-8')
-        self.logger.info("Structured JSONL log written to %s", output_path)
+        if write_to_file:
+            self._write_structured_output(cleaned, resolved_date)
+
+        return cleaned
 
     def _build_prompt_for_weekday(self, weekday: int) -> str:
         """Build the structured logger prompt for the specified weekday."""
@@ -215,6 +217,57 @@ Use the following context information minimally and reference it only when neces
         if not self.enabled:
             return None
         return self._structured_output_path(target_date)
+
+    def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
+        """Assemble the prompt and aggregated summaries for the target date."""
+        user_input = self._get_llm_user_input(target_date)
+        if not user_input:
+            return None
+
+        prompt = self._get_prompt_for_date(target_date)
+        if not prompt:
+            self.logger.info("Structured logger skipped: no prompt available for target date.")
+            return None
+
+        return {
+            'prompt': prompt,
+            'user_input': user_input
+        }
+
+    def _write_structured_output(self, data: str, target_date: date_type) -> None:
+        output_path = self._structured_output_path(target_date)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if not data.endswith("\n"):
+            data += "\n"
+        output_path.write_text(data, encoding='utf-8')
+        self.logger.info("Structured JSONL log written to %s", output_path)
+
+    def _get_up_to_date_structured_log_path(self, target_date: date_type) -> Optional[Path]:
+        """Return structured log path if it exists and is newer than all source files."""
+        if not self.enabled:
+            return None
+
+        structured_path = self.structured_output_path(target_date)
+        if not structured_path or not structured_path.exists():
+            return None
+
+        source_files = self._get_source_files(target_date)
+        if not source_files:
+            return None
+
+        latest_source_mtime = max(path.stat().st_mtime for path in source_files)
+        if structured_path.stat().st_mtime >= latest_source_mtime:
+            return structured_path
+
+        return None
+
+    def is_up_to_date(self, target_date: Optional[date_type] = None) -> bool:
+        """Check whether the structured JSONL log is current for the given date."""
+        if not self.enabled:
+            return True
+
+        resolved_date = self._resolve_target_date(target_date)
+        return self._get_up_to_date_structured_log_path(resolved_date) is not None
 
     def _clean_jsonl_output(self, data: Optional[str]) -> str:
         """Strip code fences and preamble text from JSONL responses."""

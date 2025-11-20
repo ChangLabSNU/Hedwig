@@ -1,0 +1,130 @@
+#
+# Copyright (c) 2025 Seoul National University
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+"""Common helpers shared between overview-related generators."""
+
+from __future__ import annotations
+
+from datetime import date as date_type
+from pathlib import Path
+from typing import List, Optional
+
+from ..utils.config import Config
+from ..utils.logging import setup_logger
+from ..utils.timezone import TimezoneManager
+from .external_content import ExternalContentManager
+
+
+class OverviewBase:
+    """Base class that provides config, logging, and content helpers."""
+
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        quiet: bool = False,
+        logger_name: str = 'Hedwig.overview.base'
+    ):
+        self.config = Config(config_path)
+        self.quiet = quiet
+        self.logger = setup_logger(logger_name, quiet=quiet)
+        self.summary_dir = Path(self.config.get('paths.change_summary_output', '/path/to/change-summaries'))
+        self.external_content_manager = ExternalContentManager(
+            self.config.get('overview', {}),
+            self.summary_dir
+        )
+
+    def _resolve_target_date(self, target_date: Optional[date_type]) -> date_type:
+        """Return the provided date or fall back to the configured local date."""
+        return target_date or TimezoneManager.get_local_date(self.config)
+
+    def _get_base_dir_for_date(self, target_date: date_type) -> Path:
+        """Return YYYY/MM directory for the given date."""
+        year = target_date.strftime('%Y')
+        month = target_date.strftime('%m')
+        return self.summary_dir / year / month
+
+    def _get_individual_summary_path(self, target_date: date_type) -> Path:
+        """Return the individual summary path for the target date."""
+        date_str_for_file = target_date.strftime('%Y%m%d')
+        return self._get_base_dir_for_date(target_date) / f'{date_str_for_file}-indiv.md'
+
+    def _get_source_files(self, target_date: date_type) -> Optional[List[Path]]:
+        """Return the list of files that feed into downstream overview outputs."""
+        indiv_filepath = self._get_individual_summary_path(target_date)
+
+        if not indiv_filepath.exists():
+            return None
+
+        source_files: List[Path] = [indiv_filepath]
+
+        if self.external_content_manager and self.external_content_manager.enabled:
+            date_str_for_file = target_date.strftime('%Y%m%d')
+            base_dir = self._get_base_dir_for_date(target_date)
+            for source in self.external_content_manager.sources:
+                suffix = source.get('file_suffix')
+                if not suffix:
+                    continue
+
+                candidate = base_dir / f'{date_str_for_file}{suffix}'
+                if candidate.exists():
+                    source_files.append(candidate)
+                elif source.get('required', False):
+                    return None
+
+        return source_files
+
+    def _get_llm_user_input(self, target_date: date_type) -> Optional[str]:
+        """Return the concatenated individual summary and external content."""
+        indiv_filepath = self._get_individual_summary_path(target_date)
+        self.logger.info(f"Checking for individual summary file: {indiv_filepath}")
+
+        if not indiv_filepath.exists():
+            self.logger.info("Individual summary file does not exist. Nothing to process.")
+            return None
+
+        try:
+            content = indiv_filepath.read_text(encoding='utf-8').strip()
+
+            if not content:
+                self.logger.info("Individual summary file is empty. Nothing to process.")
+                return None
+
+            self.logger.info(f"Found individual summary file with {len(content)} characters")
+
+        except Exception as exc:
+            self.logger.error(f"Error reading individual summary file: {exc}")
+            return None
+
+        self.logger.info("Checking for external content sources...")
+        external_content = self.external_content_manager.fetch_all_content(
+            target_date.strftime('%Y-%m-%d')
+        )
+
+        full_input = content
+
+        if external_content:
+            self.logger.info(f"Found external content from {len(external_content)} source(s)")
+            formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
+            full_input = content + "\n\n" + formatted_external
+        else:
+            self.logger.info("No external content found.")
+
+        return full_input
