@@ -179,12 +179,17 @@ def create_parser():
     # Run complete summarizer pipeline
     pipeline_parser = subparsers.add_parser(
         'pipeline',
-        help='Run complete summarizer pipeline (change-summary -> overview -> post-summary)'
+        help='Run complete summarizer pipeline (change-summary -> overview/structured-log -> post-summary)'
     )
     pipeline_parser.add_argument(
         '--config', '-c',
         default='config.yml',
         help='Path to configuration file'
+    )
+    pipeline_parser.add_argument(
+        '--no-posting',
+        action='store_true',
+        help='Skip posting summaries to messaging platform'
     )
     pipeline_parser.add_argument(
         '--quiet',
@@ -347,7 +352,7 @@ def handle_pipeline(args):
     from .pipeline import SummarizerPipeline
 
     pipeline = SummarizerPipeline(config_path=args.config, quiet=args.quiet)
-    success = pipeline.run()
+    success = pipeline.run(post_summary=not args.no_posting)
     sys.exit(0 if success else 1)
 
 

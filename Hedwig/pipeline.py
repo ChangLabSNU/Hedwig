@@ -27,6 +27,7 @@ from typing import Optional, Tuple
 
 from .change_summary.generator import ChangeSummaryGenerator
 from .overview.generator import OverviewGenerator
+from .overview.structured_logger import StructuredLogger
 from .messaging.manager import MessageManager
 from .utils.config import Config
 from .utils.logging import setup_logger
@@ -71,8 +72,11 @@ class SummarizerPipeline:
 
         return individual_file, overview_file, today
 
-    def run(self) -> bool:
+    def run(self, post_summary: bool = True) -> bool:
         """Run the complete summarizer pipeline
+
+        Args:
+            post_summary: Whether to post generated summaries to messaging platforms.
 
         Returns:
             True if successful, False otherwise
@@ -113,20 +117,31 @@ class SummarizerPipeline:
                 self.logger.info("No individual summary file generated (possibly no changes). Stopping pipeline.")
                 return True  # This is not an error - just no changes to report
 
-            # Step 2: Generate overview
+            # Step 2: Generate overview (and structured log if enabled)
             self.logger.info("=" * 60)
-            self.logger.info("STEP 2: Generating overview summary")
+            self.logger.info("STEP 2: Generating overview summary and structured log")
             self.logger.info("=" * 60)
 
             try:
                 overview_generator = OverviewGenerator(self.config.config_path, quiet=self.quiet)
-                overview = overview_generator.generate(write_to_file=True)
+                structured_logger = StructuredLogger(self.config.config_path, quiet=self.quiet)
+
+                overview = overview_generator.generate(write_to_file=True, target_date=today)
+
+                if structured_logger.enabled:
+                    structured_output = structured_logger.generate(write_to_file=True, target_date=today)
+                    if structured_output:
+                        self.logger.info("Structured JSONL log generated successfully.")
+                    else:
+                        self.logger.info("Structured JSONL log generation skipped or produced no output.")
+                else:
+                    self.logger.info("Structured JSONL output is disabled. Skipping structured log generation.")
 
                 if not overview:
                     self.logger.warning("No overview was generated")
 
             except Exception as e:
-                self.logger.error(f"Failed to generate overview: {e}")
+                self.logger.error(f"Failed to generate overview or structured log: {e}")
                 return False
 
             # Check if overview file was generated
@@ -139,37 +154,40 @@ class SummarizerPipeline:
             self.logger.info("STEP 3: Posting to messaging platform")
             self.logger.info("=" * 60)
 
-            try:
-                manager = MessageManager(self.config.config_path, quiet=self.quiet)
+            if not post_summary:
+                self.logger.info("Posting skipped because --no-posting was provided.")
+            else:
+                try:
+                    manager = MessageManager(self.config.config_path, quiet=self.quiet)
 
-                # Check if messaging is configured
-                if not manager.consumer_name:
-                    self.logger.warning("No messaging platform configured. Skipping posting step.")
-                    return True
+                    # Check if messaging is configured
+                    if not manager.consumer_name:
+                        self.logger.warning("No messaging platform configured. Skipping posting step.")
+                        return True
 
-                self.logger.info("Posting with:")
-                self.logger.info(f"  summary-file: {individual_file}")
-                self.logger.info(f"  overview-file: {overview_file}")
-                self.logger.info(f"  title: {title}")
+                    self.logger.info("Posting with:")
+                    self.logger.info(f"  summary-file: {individual_file}")
+                    self.logger.info(f"  overview-file: {overview_file}")
+                    self.logger.info(f"  title: {title}")
 
-                result = manager.post_summary(
-                    markdown_file=str(individual_file),
-                    message_file=str(overview_file),
-                    title=title,
-                    channel_override=None
-                )
+                    result = manager.post_summary(
+                        markdown_file=str(individual_file),
+                        message_file=str(overview_file),
+                        title=title,
+                        channel_override=None
+                    )
 
-                if result.success:
-                    self.logger.info(f"Successfully posted summary via {manager.consumer_name}")
-                    if result.url:
-                        self.logger.info(f"Summary URL: {result.url}")
-                else:
-                    self.logger.error(f"Failed to post summary: {result.error}")
+                    if result.success:
+                        self.logger.info(f"Successfully posted summary via {manager.consumer_name}")
+                        if result.url:
+                            self.logger.info(f"Summary URL: {result.url}")
+                    else:
+                        self.logger.error(f"Failed to post summary: {result.error}")
+                        return False
+
+                except Exception as e:
+                    self.logger.error(f"Failed to post summary: {e}")
                     return False
-
-            except Exception as e:
-                self.logger.error(f"Failed to post summary: {e}")
-                return False
 
             # Success
             self.logger.info("=" * 60)

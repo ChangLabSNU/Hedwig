@@ -229,11 +229,15 @@ hedwig post-summary --summary-file FILE --overview-file FILE --title TITLE [--co
 Runs the complete summarization pipeline automatically.
 
 ```bash
-hedwig pipeline [--config CONFIG]
+hedwig pipeline [--config CONFIG] [--no-posting] [--quiet]
 ```
 
 **Options:**
 - `--config`: Configuration file path (default: `config.yml`)
+- `--no-posting`: Skip posting the generated summaries to messaging platforms
+- `--quiet`: Suppress informational messages during execution
+
+Structured JSONL logs are generated automatically when `overview.jsonl_output.enabled` is set to `true` in `config.yml`.
 
 **Note**: This command does NOT include syncing from Notion. Run `hedwig sync` separately before the pipeline to ensure the Git repository is up-to-date.
 
