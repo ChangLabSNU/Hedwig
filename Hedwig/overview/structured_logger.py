@@ -102,7 +102,6 @@ Use the following context information minimally and reference it only when neces
 
         settings = self.config.get('overview.jsonl_output', {}) or {}
         self.enabled = bool(settings.get('enabled', False))
-        self.payload_dir = self.summary_dir / '_structured_logger'
         self.output_suffix = settings.get('file_suffix', '-summary.jsonl')
 
         if not self.enabled:
@@ -125,9 +124,6 @@ Use the following context information minimally and reference it only when neces
         llm_input = self._prepare_llm_input(resolved_date)
         if not llm_input:
             return None
-
-        self._write_payload_file('prompt', llm_input['prompt'], resolved_date)
-        self._write_payload_file('input', llm_input['user_input'], resolved_date)
 
         try:
             self.logger.info("Submitting structured log prompt to LLM model '%s'", self.model)
@@ -193,17 +189,6 @@ Use the following context information minimally and reference it only when neces
     def _get_prompt_for_date(self, target_date: date_type) -> str:
         weekday = target_date.weekday()
         return self._build_prompt_for_weekday(weekday)
-
-    def _write_payload_file(self, kind: str, content: str, target_date: date_type) -> None:
-        if not content:
-            return
-
-        path = self.payload_dir / target_date.strftime('%Y') / target_date.strftime('%m')
-        path.mkdir(parents=True, exist_ok=True)
-        filename = f"{target_date.strftime('%Y%m%d')}-{kind}.md"
-        file_path = path / filename
-        file_path.write_text(content, encoding='utf-8')
-        self.logger.debug("Structured logger wrote %s", file_path)
 
     def _structured_output_path(self, target_date: date_type) -> Path:
         base_dir = self.summary_dir / target_date.strftime('%Y') / target_date.strftime('%m')
