@@ -216,13 +216,13 @@ hedwig generate-overview [--config CONFIG] [--no-write]
 Posts summaries to configured messaging platforms.
 
 ```bash
-hedwig post-summary --summary-file FILE --overview-file FILE --title TITLE [--config CONFIG]
+hedwig post-summary [--summary-file FILE] [--overview-file FILE] [--title TITLE] [--config CONFIG]
 ```
 
 **Options:**
-- `--summary-file`: Path to the markdown summary file
-- `--overview-file`: Path to the overview message file
-- `--title`: Title for the posted summary
+- `--summary-file`: Path to the markdown summary file (defaults to today's generated summary)
+- `--overview-file`: Path to the overview message file (defaults to today's generated overview)
+- `--title`: Title for the posted summary (defaults to the pipeline title format for yesterday's date)
 - `--config`: Configuration file path (default: `config.yml`)
 
 ### `hedwig pipeline`

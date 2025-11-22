@@ -26,7 +26,7 @@ Command line interface for Hedwig package
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from . import __version__
 
 
@@ -152,18 +152,15 @@ def create_parser():
     )
     post_parser.add_argument(
         '--summary-file',
-        required=True,
-        help='Path to the markdown summary file to post'
+        help="Path to the markdown summary file to post (defaults to today's generated file)"
     )
     post_parser.add_argument(
         '--overview-file',
-        required=True,
-        help='Path to the file containing overview message'
+        help="Path to the file containing overview message (defaults to today's generated file)"
     )
     post_parser.add_argument(
         '--title',
-        required=True,
-        help='Title for the summary'
+        help='Title for the summary (defaults to pipeline title format)'
     )
     post_parser.add_argument(
         '--config', '-c',
@@ -317,6 +314,7 @@ def handle_generate_overview(args):
 def handle_post_summary(args):
     """Handle post-summary command"""
     from .messaging.manager import MessageManager
+    from .pipeline import SummarizerPipeline
 
     manager = MessageManager(config_path=args.config, quiet=args.quiet)
 
@@ -326,11 +324,33 @@ def handle_post_summary(args):
             print("Error: No messaging platform configured in config file")
         sys.exit(1)
 
+    summary_file = args.summary_file
+    overview_file = args.overview_file
+    title = args.title
+
+    # Fill missing arguments with pipeline defaults
+    if not summary_file or not overview_file or not title:
+        pipeline = SummarizerPipeline(config_path=args.config, quiet=args.quiet)
+        default_summary, default_overview, today = pipeline.get_date_paths()
+        default_title = pipeline.title_format.format(
+            date=(today - timedelta(days=1)).strftime('%Y-%m-%d')
+        )
+
+        summary_file = summary_file or str(default_summary)
+        overview_file = overview_file or str(default_overview)
+        title = title or default_title
+
+        if not args.quiet:
+            print("Using default posting parameters:")
+            print(f"  summary-file: {summary_file}")
+            print(f"  overview-file: {overview_file}")
+            print(f"  title: {title}")
+
     # Post summary
     result = manager.post_summary(
-        markdown_file=args.summary_file,
-        message_file=args.overview_file,
-        title=args.title,
+        markdown_file=summary_file,
+        message_file=overview_file,
+        title=title,
         channel_override=None
     )
 
