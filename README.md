@@ -102,9 +102,9 @@ Hedwig follows a two-stage process:
       │                               AI summaries of recent changes
       │
       ├─► generate-daily-summary ── Produces structured daily summary logs
-      │                              for downstream systems (JSONL)
+      │                              for downstream systems (JSONL) using the logical day window
       │
-      ├─► generate-overview ──────── Consolidates individual summaries
+      ├─► generate-overview ──────── Consolidates structured daily logs
       │                              into a Markdown team-focused overview
       │
       └─► post-summary ───────────── Posts to messaging platform
@@ -261,6 +261,7 @@ hedwig pipeline [--config CONFIG] [--no-posting] [--quiet]
 - `--quiet`: Suppress informational messages during execution
 
 The pipeline runs change summaries, structured daily summaries (if enabled), overviews, and posting in sequence.
+Logical “days” are anchored by `global.logical_day_start` (default 4 AM), so a run at 04:30 processes the window from the previous 4 AM to the current 4 AM.
 
 **Note**: This command does NOT include syncing from Notion. Run `hedwig sync` separately before the pipeline to ensure the Git repository is up-to-date.
 

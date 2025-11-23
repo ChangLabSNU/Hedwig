@@ -73,8 +73,8 @@ python -m hedwig pipeline
 ```
 Runs the complete summarizer pipeline automatically:
 1. Generate change summaries from recent git commits
-2. Generate structured daily summary logs (if enabled)
-3. Generate overview summary from individual summaries
+2. Generate structured daily summary logs
+3. Generate overview summary from structured daily logs
 4. Post the summary to the configured messaging platform
 
 The pipeline stops gracefully if there are no changes to report or if it's a day when no summary should be generated (e.g., Sunday for overviews).

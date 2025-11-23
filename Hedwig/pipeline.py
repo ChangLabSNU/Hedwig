@@ -54,13 +54,29 @@ class SummarizerPipeline:
         # Get pipeline configuration
         self.title_format = self.config.get('pipeline.title_format', 'QBio Research {date}')
 
+    def _logical_today(self) -> datetime.date:
+        """Return the logical 'today' anchored to global.logical_day_start."""
+        now_local = TimezoneManager.now_local(self.config)
+        logical_start = self.config.get('global.logical_day_start', 4)
+        try:
+            logical_hour = int(logical_start)
+            if logical_hour < 0 or logical_hour > 23:
+                logical_hour = 4
+        except (TypeError, ValueError):
+            logical_hour = 4
+
+        boundary = now_local.replace(hour=logical_hour, minute=0, second=0, microsecond=0)
+        if now_local < boundary:
+            return (now_local.date() - datetime.timedelta(days=1))
+        return now_local.date()
+
     def get_date_paths(self) -> Tuple[Path, Path, datetime.date]:
         """Get the date-based file paths for today
 
         Returns:
             Tuple of (individual_file, overview_file, today_date)
         """
-        today = TimezoneManager.get_local_date(self.config)
+        today = self._logical_today()
         year = today.strftime('%Y')
         month = today.strftime('%m')
         date_str = today.strftime('%Y%m%d')
