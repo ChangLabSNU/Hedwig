@@ -112,23 +112,15 @@ class DiffAnalyzer:
         filediffs = result.split('\ndiff --git ')
         return ['diff --git ' + d for d in filediffs if d.strip()]
 
-    def get_diffs_since(self, max_age_seconds: int) -> List[str]:
-        """Backward-compatible wrapper that fetches diffs for the last N seconds."""
-        end_time = TimezoneManager.now_utc()
-        start_time = end_time - datetime.timedelta(seconds=max_age_seconds)
-        return self.get_diffs_between(start_time, end_time)
-
     def extract_metadata(
         self,
         diff: str,
-        max_age_seconds: Optional[int] = None,
         time_window: Optional[Tuple[datetime.datetime, datetime.datetime]] = None
     ) -> Dict[str, str]:
         """Extract metadata information from diff header
 
         Args:
             diff: Git diff text
-            max_age_seconds: If provided, extract all editors within this time range
             time_window: Optional (start, end) window for editor extraction
 
         Returns:
@@ -178,8 +170,6 @@ class DiffAnalyzer:
                 editors: List[str] = []
                 if time_window and filepath:
                     editors = self.get_all_editors_for_file_between(filepath, *time_window)
-                elif max_age_seconds and filepath:
-                    editors = self.get_all_editors_for_file(filepath, max_age_seconds)
 
                 if editors:
                     if 'Last Edited By' in header:
@@ -232,62 +222,6 @@ class DiffAnalyzer:
         days = config.get(weekday_name, 1)
 
         return 86400 * days
-
-    def get_all_editors_for_file(self, filepath: str, max_age_seconds: int) -> List[str]:
-        """Get all unique editors who modified a file within the time range
-
-        Args:
-            filepath: Path to the file relative to repo root
-            max_age_seconds: Maximum age of commits to include
-
-        Returns:
-            List of unique editor IDs/names
-        """
-        # Calculate the cutoff time in UTC
-        now = TimezoneManager.now_utc()
-        cutoff_time = now - datetime.timedelta(seconds=max_age_seconds)
-        cutoff_time_str = self._format_git_time(cutoff_time)
-
-        # Get all commits for this file within the time range
-        cmd = ['git', 'log', '--format=%H', f'--since={cutoff_time_str}', '--', filepath]
-        try:
-            result = subprocess.check_output(cmd, cwd=self.repo_path, text=True).strip()
-        except subprocess.CalledProcessError:
-            return []
-
-        if not result:
-            return []
-
-        commits = result.split('\n')
-        editors = []
-
-        # Extract Last Edited By from each commit
-        for commit in commits:
-            cmd_show = ['git', 'show', f'{commit}:{filepath}']
-            try:
-                content = subprocess.check_output(cmd_show, cwd=self.repo_path, text=True)
-                # Look for Last Edited By in first 5 lines
-                for line in content.split('\n')[:5]:
-                    if line.startswith('- Last Edited By:'):
-                        editor_id = line.split(':', 1)[1].strip()
-                        if editor_id:
-                            # Replace UUID with real name if available
-                            if editor_id in self.user_lookup:
-                                editor_name = self.user_lookup[editor_id]
-                            elif self.unknown_user_callback:
-                                result = self.unknown_user_callback(editor_id)
-                                editor_name = result if result else editor_id
-                            else:
-                                editor_name = editor_id
-
-                            if editor_name not in editors:
-                                editors.append(editor_name)
-                        break
-            except subprocess.CalledProcessError:
-                # File might not exist in this commit
-                continue
-
-        return editors
 
     def get_all_editors_for_file_between(
         self,

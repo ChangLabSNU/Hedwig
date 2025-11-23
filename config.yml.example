@@ -155,16 +155,6 @@ change_summary:
   # Set to false to disable automatic user list synchronization
   auto_sync_userlist: true
 
-  # How far back to look for changes (days) by weekday
-  max_age_by_weekday:
-    monday: 2      # Covers weekend changes
-    tuesday: 1
-    wednesday: 1
-    thursday: 1
-    friday: 1
-    saturday: 1
-    sunday: 1
-
 # ==============================================================================
 # OVERVIEW - Generate team-focused summary from individual summaries
 # ==============================================================================

@@ -102,7 +102,7 @@ Format the summary as follows:
 
     def _get_logical_day_start_hour(self) -> int:
         """Return the configured logical day start hour (0-23)."""
-        value = self.config.get('change_summary.logical_day_start', 4)
+        value = self.config.get('global.logical_day_start', 4)
         try:
             hour = int(value)
             if 0 <= hour < 24:

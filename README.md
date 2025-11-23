@@ -200,6 +200,7 @@ hedwig generate-change-summary [--config CONFIG] [--no-write]
 **Options:**
 - `--config`: Configuration file path (default: `config.yml`)
 - `--no-write`: Print to stdout instead of saving to file
+- Uses a fixed 24-hour window anchored to `global.timezone` and `global.logical_day_start` (default 4 AM) to decide which commits to summarize
 
 **Auto User Sync:**
 When `change_summary.auto_sync_userlist` is set to `true` (default), the command will automatically run `sync-userlist` if it encounters user IDs not found in the user list. This ensures that new team members are automatically added to the user list. Set to `false` to disable this behavior.
