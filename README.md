@@ -95,14 +95,17 @@ Hedwig follows a two-stage process:
       │
       ▼
 ┌──────────────────────────┐
-│ hedwig pipeline          │ ─── Automated 3-step process:
+│ hedwig pipeline          │ ─── Automated 4-step process:
 └──────────────────────────┘
       │
       ├─► generate-change-summary ─── Analyzes Git commits and creates
       │                               AI summaries of recent changes
       │
+      ├─► generate-daily-summary ── Produces structured daily summary logs
+      │                              for downstream systems (JSONL)
+      │
       ├─► generate-overview ──────── Consolidates individual summaries
-      │                              into team-focused overview
+      │                              into a Markdown team-focused overview
       │
       └─► post-summary ───────────── Posts to messaging platform
                                      (e.g., Slack Canvas)
@@ -201,16 +204,36 @@ hedwig generate-change-summary [--config CONFIG] [--no-write]
 **Auto User Sync:**
 When `change_summary.auto_sync_userlist` is set to `true` (default), the command will automatically run `sync-userlist` if it encounters user IDs not found in the user list. This ensures that new team members are automatically added to the user list. Set to `false` to disable this behavior.
 
-### `hedwig generate-overview`
-Creates team-focused overview summaries from individual change summaries.
+### `hedwig generate-daily-summary`
+Creates structured daily summary logs (JSONL) from individual change summaries for downstream systems.
 
 ```bash
-hedwig generate-overview [--config CONFIG] [--no-write]
+hedwig generate-daily-summary [--config CONFIG] [--no-write] [--force] [--date YYYY-MM-DD]
 ```
 
 **Options:**
 - `--config`: Configuration file path (default: `config.yml`)
 - `--no-write`: Print to stdout instead of saving to file
+- `--force`: Regenerate even if an up-to-date JSONL file already exists
+- `--date`: Process a specific date (YYYY-MM-DD) instead of today
+- `--quiet`: Suppress informational messages
+
+Structured JSONL output must be enabled with `overview.jsonl_output.enabled: true` in `config.yml`.
+
+### `hedwig generate-overview`
+Creates Markdown team-focused overview summaries from individual change summaries.
+
+```bash
+hedwig generate-overview [--config CONFIG] [--no-write] [--force] [--date YYYY-MM-DD] [--print-prompt]
+```
+
+**Options:**
+- `--config`: Configuration file path (default: `config.yml`)
+- `--no-write`: Print to stdout instead of saving to file
+- `--force`: Regenerate even if an up-to-date overview already exists
+- `--date`: Process a specific date (YYYY-MM-DD) instead of today
+- `--print-prompt`: Print the LLM prompt and user input to stdout instead of generating
+- `--quiet`: Suppress informational messages
 
 ### `hedwig post-summary`
 Posts summaries to configured messaging platforms.
@@ -237,7 +260,7 @@ hedwig pipeline [--config CONFIG] [--no-posting] [--quiet]
 - `--no-posting`: Skip posting the generated summaries to messaging platforms
 - `--quiet`: Suppress informational messages during execution
 
-Structured JSONL logs are generated automatically when `overview.jsonl_output.enabled` is set to `true` in `config.yml`.
+The pipeline runs change summaries, structured daily summaries (if enabled), overviews, and posting in sequence.
 
 **Note**: This command does NOT include syncing from Notion. Run `hedwig sync` separately before the pipeline to ensure the Git repository is up-to-date.
 

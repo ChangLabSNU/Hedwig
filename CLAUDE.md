@@ -44,13 +44,20 @@ python -m hedwig generate-change-summary --no-write  # Print to stdout without s
 ```
 Analyzes recent git changes and generates summaries using LLM. By default, saves summaries to `{change_summary_output}/YYYY/MM/YYYYMMDD-indiv.md`.
 
+### Generate Daily Summary
+```bash
+python -m hedwig generate-daily-summary
+python -m hedwig generate-daily-summary --no-write  # Print JSONL instead of writing to file
+```
+Creates structured JSONL daily summaries for downstream systems. Enable with `overview.jsonl_output.enabled: true` in `config.yml`. Use `--date YYYY-MM-DD` to backfill a specific day.
+
 ### Generate Overview
 ```bash
 python -m hedwig generate-overview
 python -m hedwig generate-overview --no-write  # Print to stdout without saving to file
 python -m hedwig generate-overview --print-prompt  # Print the LLM prompt and input to stdout for debugging
 ```
-Creates an overview summary from individual change summaries. Generates a team-focused summary with MVP highlights. By default, saves overview to `{change_summary_output}/YYYY/MM/YYYYMMDD-overview.md`.
+Creates a Markdown overview from individual change summaries. Generates a team-focused summary with MVP highlights. By default, saves overview to `{change_summary_output}/YYYY/MM/YYYYMMDD-overview.md`.
 
 The `--print-prompt` option is useful for debugging and understanding what's being sent to the LLM. It prints both the system prompt and the user input (individual summaries + external content) to stdout.
 
@@ -66,8 +73,9 @@ python -m hedwig pipeline
 ```
 Runs the complete summarizer pipeline automatically:
 1. Generate change summaries from recent git commits
-2. Generate overview summary from individual summaries
-3. Post the summary to the configured messaging platform
+2. Generate structured daily summary logs (if enabled)
+3. Generate overview summary from individual summaries
+4. Post the summary to the configured messaging platform
 
 The pipeline stops gracefully if there are no changes to report or if it's a day when no summary should be generated (e.g., Sunday for overviews).
 

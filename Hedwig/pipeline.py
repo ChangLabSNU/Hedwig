@@ -117,31 +117,37 @@ class SummarizerPipeline:
                 self.logger.info("No individual summary file generated (possibly no changes). Stopping pipeline.")
                 return True  # This is not an error - just no changes to report
 
-            # Step 2: Generate overview (and structured log if enabled)
+            # Step 2: Generate structured daily summary log (if enabled)
             self.logger.info("=" * 60)
-            self.logger.info("STEP 2: Generating overview summary and structured log")
+            self.logger.info("STEP 2: Generating structured daily summary log")
+            self.logger.info("=" * 60)
+
+            try:
+                structured_logger = StructuredLogger(self.config.config_path, quiet=self.quiet)
+                structured_output = structured_logger.generate(write_to_file=True, target_date=today)
+                if structured_output:
+                    self.logger.info("Structured JSONL log generated successfully.")
+                else:
+                    self.logger.info("Structured JSONL log generation skipped or produced no output.")
+
+            except Exception as e:
+                self.logger.error(f"Failed to generate structured daily summary log: {e}")
+                return False
+
+            # Step 3: Generate overview
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 3: Generating overview summary")
             self.logger.info("=" * 60)
 
             try:
                 overview_generator = OverviewGenerator(self.config.config_path, quiet=self.quiet)
-                structured_logger = StructuredLogger(self.config.config_path, quiet=self.quiet)
-
                 overview = overview_generator.generate(write_to_file=True, target_date=today)
-
-                if structured_logger.enabled:
-                    structured_output = structured_logger.generate(write_to_file=True, target_date=today)
-                    if structured_output:
-                        self.logger.info("Structured JSONL log generated successfully.")
-                    else:
-                        self.logger.info("Structured JSONL log generation skipped or produced no output.")
-                else:
-                    self.logger.info("Structured JSONL output is disabled. Skipping structured log generation.")
 
                 if not overview:
                     self.logger.warning("No overview was generated")
 
             except Exception as e:
-                self.logger.error(f"Failed to generate overview or structured log: {e}")
+                self.logger.error(f"Failed to generate overview: {e}")
                 return False
 
             # Check if overview file was generated
@@ -149,9 +155,9 @@ class SummarizerPipeline:
                 self.logger.info("No overview file generated (possibly Sunday or no content). Stopping pipeline.")
                 return True  # This is not an error
 
-            # Step 3: Post to messaging platform
+            # Step 4: Post to messaging platform
             self.logger.info("=" * 60)
-            self.logger.info("STEP 3: Posting to messaging platform")
+            self.logger.info("STEP 4: Posting to messaging platform")
             self.logger.info("=" * 60)
 
             if not post_summary:

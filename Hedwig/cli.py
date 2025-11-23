@@ -30,6 +30,18 @@ from datetime import datetime, timedelta
 from . import __version__
 
 
+def _parse_target_date(date_str):
+    """Parse YYYY-MM-DD date strings for CLI commands."""
+    if not date_str:
+        return None
+
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        print("Error: --date must be in YYYY-MM-DD format")
+        sys.exit(1)
+
+
 def create_parser():
     """Create and configure the argument parser"""
     parser = argparse.ArgumentParser(
@@ -110,6 +122,36 @@ def create_parser():
         help='Suppress information messages'
     )
 
+    # Generate structured daily summary logs
+    daily_summary_parser = subparsers.add_parser(
+        'generate-daily-summary',
+        help='Generate structured daily summary logs for downstream systems'
+    )
+    daily_summary_parser.add_argument(
+        '--config', '-c',
+        default='config.yml',
+        help='Path to configuration file'
+    )
+    daily_summary_parser.add_argument(
+        '--no-write',
+        action='store_true',
+        help='Do not write summaries to file, only print them'
+    )
+    daily_summary_parser.add_argument(
+        '--quiet',
+        action='store_true',
+        help='Suppress information messages'
+    )
+    daily_summary_parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Regenerate structured summaries even if an up-to-date file already exists'
+    )
+    daily_summary_parser.add_argument(
+        '--date',
+        help='Date (YYYY-MM-DD) whose summaries should be processed instead of today'
+    )
+
     # Generate overview
     overview_parser = subparsers.add_parser(
         'generate-overview',
@@ -176,7 +218,7 @@ def create_parser():
     # Run complete summarizer pipeline
     pipeline_parser = subparsers.add_parser(
         'pipeline',
-        help='Run complete summarizer pipeline (change-summary -> overview/structured-log -> post-summary)'
+        help='Run complete summarizer pipeline (change-summary -> daily-summary -> overview -> post-summary)'
     )
     pipeline_parser.add_argument(
         '--config', '-c',
@@ -249,21 +291,33 @@ def handle_generate_change_summary(args):
         print("\n---\n".join(summaries))
 
 
+def handle_generate_daily_summary(args):
+    """Handle generate-daily-summary command"""
+    from .overview.structured_logger import StructuredLogger
+
+    structured_logger = StructuredLogger(config_path=args.config, quiet=args.quiet)
+    target_date = _parse_target_date(args.date)
+
+    if not args.force and not args.no_write and structured_logger.is_up_to_date(target_date):
+        structured_logger.logger.info("Structured log already up to date. Skipping generation.")
+        return
+
+    output = structured_logger.generate(
+        write_to_file=not args.no_write,
+        target_date=target_date
+    )
+
+    if args.no_write and output and not args.quiet:
+        print(output)
+
+
 def handle_generate_overview(args):
     """Handle generate-overview command"""
     from .overview.generator import OverviewGenerator
-    from .overview.structured_logger import StructuredLogger
 
     generator = OverviewGenerator(config_path=args.config, quiet=args.quiet)
-    structured_logger = StructuredLogger(config_path=args.config, quiet=args.quiet)
 
-    target_date = None
-    if args.date:
-        try:
-            target_date = datetime.strptime(args.date, '%Y-%m-%d').date()
-        except ValueError:
-            print("Error: --date must be in YYYY-MM-DD format")
-            sys.exit(1)
+    target_date = _parse_target_date(args.date)
 
     # If --print-prompt is specified, print the prompt and exit
     if args.print_prompt:
@@ -278,7 +332,6 @@ def handle_generate_overview(args):
         return
 
     needs_overview = True
-    needs_structured = structured_logger.enabled and not args.no_write
 
     if not args.force and not args.no_write:
         cached_overview_path = generator.get_up_to_date_overview_path(target_date)
@@ -286,23 +339,12 @@ def handle_generate_overview(args):
             needs_overview = False
             generator.logger.info("Overview already up to date. Skipping generation.")
 
-        if needs_structured:
-            needs_structured = not structured_logger.is_up_to_date(target_date)
-            if not needs_structured:
-                structured_logger.logger.info("Structured log already up to date. Skipping generation.")
-
-    if not needs_overview and not needs_structured:
-        generator.logger.info("Overview and structured log already up to date. Skipping generation.")
+    if not needs_overview:
         return
 
     overview = None
     if needs_overview:
         overview = generator.generate(
-            write_to_file=not args.no_write,
-            target_date=target_date)
-
-    if needs_structured:
-        structured_logger.generate(
             write_to_file=not args.no_write,
             target_date=target_date)
 
@@ -412,6 +454,7 @@ def main():
         'sync': handle_sync,
         'sync-userlist': handle_sync_userlist,
         'generate-change-summary': handle_generate_change_summary,
+        'generate-daily-summary': handle_generate_daily_summary,
         'generate-overview': handle_generate_overview,
         'post-summary': handle_post_summary,
         'pipeline': handle_pipeline,

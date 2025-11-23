@@ -33,6 +33,38 @@ global:
   # Timezone for all timestamp operations (except git which uses UTC)
   # Used by summaries, health checks, pipeline, and sync operations
   timezone: Asia/Seoul
+  # Logical day start hour (0-23). A "day" runs from this hour to the next day's same hour.
+  logical_day_start: 4
+
+# ==============================================================================
+# STATIC CONTEXT - Lab intro/status and external add-ons for prompts
+# ==============================================================================
+
+static_context:
+  # Lab/team information for context
+  lab_intro: "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
+
+  # Optional: Rich lab status text injected into context plugins
+  lab_status: |
+    Laboratory: Computational Biology Lab
+    Research Areas: Genomics, RNA Biology, Bioinformatics
+    Current Projects:
+    - Single-cell RNA sequencing analysis
+    - Alternative splicing in cancer
+    Team Members:
+    - Dr. Jane Smith (PI) - Computational genomics
+    - Dr. John Doe - Machine learning for biology
+
+  # External content sources included alongside structured daily logs
+  external_contents:
+    - name: "slack_conversations"
+      file_suffix: "-slack.md"
+      description: "Team discussions from Slack"
+      required: false
+    - name: "meeting_notes"
+      file_suffix: "-meeting.md"
+      description: "Meeting minutes and decisions"
+      required: false
 
 # ==============================================================================
 # NOTION SYNC - Synchronize Notion pages to Git repository
@@ -141,8 +173,15 @@ overview:
   # Output language: ko (Korean), en (English), ja (Japanese), zh_CN (Chinese)
   language: ko
 
-  # Lab/team information for context
-  # lab_info: "Seoul National University's QBioLab, which studies molecular biology using bioinformatics methodologies"
+  # Number of structured daily logs to include by weekday (0 disables overview on that weekday)
+  num_days_by_weekday:
+    monday: 2      # Covers weekend changes
+    tuesday: 1
+    wednesday: 1
+    thursday: 1
+    friday: 1
+    saturday: 1
+    sunday: 0
 
   # Context plugins provide additional information in the overview prompt
   context_plugins:
@@ -153,25 +192,7 @@ overview:
 
     # Static context plugin - adds fixed context information
     static:
-      enabled: false  # Set to true to enable static context
-      # The content field contains the static text that will be included in prompts
-      # This is useful for providing laboratory-specific information such as:
-      # - Research areas and focus
-      # - Current research topics
-      # - Team members and their expertise
-      # - Laboratory policies or guidelines
-      content: |
-        Laboratory: Computational Biology Lab
-        Research Areas: Genomics, RNA Biology, Bioinformatics
-        Current Projects:
-        - Single-cell RNA sequencing analysis
-        - Alternative splicing in cancer
-        - Long-read sequencing methods
-        Team Members:
-        - Dr. Jane Smith (PI) - Computational genomics
-        - Dr. John Doe - Machine learning for biology
-        - Alice Johnson - RNA-seq analysis
-        - Bob Wilson - Proteomics integration
+      enabled: false  # Static content now sourced from static_context.lab_status
 
     # Weather context plugin - adds weather information
     weather:
@@ -205,29 +226,6 @@ overview:
         #   enabled: true
 
     # Add more context plugins here as they become available
-
-  # External content sources - Include additional content in overview generation
-  external_content:
-    enabled: false  # Set to true to enable external content inclusion
-    sources:
-      - name: "slack_conversations"
-        file_suffix: "-slack.md"
-        description: "Team discussions from Slack"
-        required: false
-      - name: "meeting_notes"
-        file_suffix: "-meeting.md"
-        description: "Meeting minutes and decisions"
-        required: false
-      # Add more sources as needed
-      # - name: "external_updates"
-      #   file_suffix: "-external.md"
-      #   description: "Updates from external collaborators"
-      #   required: false
-
-  # Optional JSONL output for machine-readable outputs (also enables update logging)
-  jsonl_output:
-    enabled: false  # Set to true to enable JSONL output
-    file_suffix: "-summary.jsonl"  # Output file suffix
 
 # ==============================================================================
 # MESSAGING - Send summaries to team communication platforms

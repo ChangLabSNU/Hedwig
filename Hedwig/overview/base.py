@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,7 +38,7 @@ from .external_content import ExternalContentManager
 class OverviewBase:
     """Base class that provides config, logging, and content helpers."""
 
-    DEFAULT_LAB_INFO = (
+    DEFAULT_LAB_INTRO = (
         "Seoul National University's QBioLab, which studies molecular biology using "
         "bioinformatics methodologies"
     )
@@ -66,10 +66,7 @@ class OverviewBase:
         self.quiet = quiet
         self.logger = setup_logger(logger_name, quiet=quiet)
         self.summary_dir = Path(self.config.get('paths.change_summary_output', '/path/to/change-summaries'))
-        self.external_content_manager = ExternalContentManager(
-            self.config.get('overview', {}),
-            self.summary_dir
-        )
+        self.external_content_manager = ExternalContentManager(self.config, self.summary_dir)
         self.llm_client = LLMClient(self.config)
 
         self.language = self.config.get('overview.language', 'ko').lower()
@@ -82,7 +79,7 @@ class OverviewBase:
                 )
             self.lang_instructions = language_instructions[self.language]
 
-        self.lab_info = self.config.get('overview.lab_info', self.DEFAULT_LAB_INFO)
+        self.lab_intro = self.config.get('static_context.lab_intro', self.DEFAULT_LAB_INTRO)
 
         context_default = default_context_prefix or ""
         if context_prefix_config_key:
@@ -98,8 +95,30 @@ class OverviewBase:
         self.weekday_names = list(self.default_weekday_config.keys())
 
     def _resolve_target_date(self, target_date: Optional[date_type]) -> date_type:
-        """Return the provided date or fall back to the configured local date."""
-        return target_date or TimezoneManager.get_local_date(self.config)
+        """Return the provided date or the logical day anchored to configured start."""
+        if target_date:
+            return target_date
+
+        now_local = TimezoneManager.now_local(self.config)
+        logical_start = self.config.get('global.logical_day_start', 4)
+        try:
+            logical_hour = int(logical_start)
+            if logical_hour < 0 or logical_hour > 23:
+                logical_hour = 4
+        except (TypeError, ValueError):
+            logical_hour = 4
+
+        logical_boundary = now_local.replace(
+            hour=logical_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        if now_local < logical_boundary:
+            return (now_local - timedelta(days=1)).date()
+
+        return now_local.date()
 
     def _get_base_dir_for_date(self, target_date: date_type) -> Path:
         """Return YYYY/MM directory for the given date."""
@@ -121,7 +140,7 @@ class OverviewBase:
 
         source_files: List[Path] = [indiv_filepath]
 
-        if self.external_content_manager and self.external_content_manager.enabled:
+        if self.external_content_manager and self.external_content_manager.sources:
             date_str_for_file = target_date.strftime('%Y%m%d')
             base_dir = self._get_base_dir_for_date(target_date)
             for source in self.external_content_manager.sources:

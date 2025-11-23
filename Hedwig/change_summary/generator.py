@@ -21,10 +21,11 @@
 
 """Main change summary generation module"""
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from pathlib import Path
 import os
 import pandas as pd
+from datetime import datetime, timedelta
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
@@ -99,6 +100,41 @@ Format the summary as follows:
         # Get prompt configuration
         self.prompt = self.config.get('api.llm.diff_summary_prompt', self.DEFAULT_DIFF_SUMMARY_PROMPT)
 
+    def _get_logical_day_start_hour(self) -> int:
+        """Return the configured logical day start hour (0-23)."""
+        value = self.config.get('change_summary.logical_day_start', 4)
+        try:
+            hour = int(value)
+            if 0 <= hour < 24:
+                return hour
+            self.logger.warning("Invalid logical_day_start '%s'; falling back to 4.", value)
+        except (TypeError, ValueError):
+            self.logger.warning("Unable to parse logical_day_start '%s'; falling back to 4.", value)
+        return 4
+
+    def _determine_time_window(self) -> Tuple[datetime, datetime, datetime, datetime]:
+        """Compute the 24h window anchored to the configured logical day start."""
+        now_local = TimezoneManager.now_local(self.config)
+        logical_start_hour = self._get_logical_day_start_hour()
+
+        window_end_local = now_local.replace(
+            hour=logical_start_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        # If we've passed today's logical start, anchor to it; otherwise use yesterday's
+        if now_local < window_end_local:
+            window_end_local -= timedelta(days=1)
+
+        window_start_local = window_end_local - timedelta(hours=24)
+
+        window_start_utc = TimezoneManager.to_utc(window_start_local)
+        window_end_utc = TimezoneManager.to_utc(window_end_local)
+
+        return window_start_local, window_end_local, window_start_utc, window_end_utc
+
     def _load_user_lookup(self) -> Dict[str, str]:
         """Load user lookup table from TSV file
 
@@ -169,7 +205,12 @@ Format the summary as follows:
         return None
 
 
-    def _process_single_diff(self, diff: str, index: int, max_age_seconds: Optional[int] = None) -> Optional[str]:
+    def _process_single_diff(
+        self,
+        diff: str,
+        index: int,
+        time_window: Optional[Tuple[datetime, datetime]] = None
+    ) -> Optional[str]:
         """Process a single diff and generate summary
 
         Args:
@@ -182,7 +223,7 @@ Format the summary as follows:
         """
         try:
             # Extract metadata
-            metadata = self.diff_analyzer.extract_metadata(diff, max_age_seconds)
+            metadata = self.diff_analyzer.extract_metadata(diff, time_window=time_window)
             self.logger.info(f'Processing note {metadata["Title"]} in {metadata.get("Page Location", "unknown")}...')
 
             # Generate summary
@@ -203,7 +244,11 @@ Format the summary as follows:
             self.logger.error(f"Error processing diff {index}: {e}")
             return None
 
-    def _process_diffs(self, diffs: List[str], max_age_seconds: Optional[int] = None) -> List[str]:
+    def _process_diffs(
+        self,
+        diffs: List[str],
+        time_window: Optional[Tuple[datetime, datetime]] = None
+    ) -> List[str]:
         """Process a list of diffs and generate summaries
 
         Args:
@@ -215,7 +260,7 @@ Format the summary as follows:
         """
         summaries = []
         for i, diff in enumerate(diffs):
-            summary = self._process_single_diff(diff, i, max_age_seconds)
+            summary = self._process_single_diff(diff, i, time_window=time_window)
             if summary:
                 summaries.append(summary)
         return summaries
@@ -231,16 +276,14 @@ Format the summary as follows:
         """
         self.logger.info("Starting summary generation...")
 
-        # Get weekday configuration
-        weekday_config = self.config.get('change_summary.max_age_by_weekday', {})
+        window_start_local, window_end_local, window_start_utc, window_end_utc = self._determine_time_window()
+        self.logger.info(
+            "Processing window: %s to %s (24h fixed)",
+            window_start_local.strftime('%Y-%m-%d %H:%M %Z'),
+            window_end_local.strftime('%Y-%m-%d %H:%M %Z')
+        )
 
-        # Determine max age based on current weekday
-        current_weekday = TimezoneManager.get_local_weekday(self.config)
-        max_age_seconds = DiffAnalyzer.get_max_age_for_weekday(current_weekday, weekday_config)
-        self.logger.info(f"Weekday: {current_weekday}, using max age: {max_age_seconds/3600:.1f} hours")
-
-        # Get diffs
-        diffs = self.diff_analyzer.get_diffs_since(max_age_seconds)
+        diffs = self.diff_analyzer.get_diffs_between(window_start_utc, window_end_utc)
 
         if not diffs:
             self.logger.info("No recent commits to process.")
@@ -249,28 +292,28 @@ Format the summary as follows:
         self.logger.info(f"Found {len(diffs)} diffs to process")
 
         # Process diffs
-        summaries = self._process_diffs(diffs, max_age_seconds)
+        summaries = self._process_diffs(diffs, time_window=(window_start_utc, window_end_utc))
         self.logger.info(f"Generated {len(summaries)} summaries")
 
         # Write summaries to file
         if summaries and write_to_file:
-            self._write_summaries_to_file(summaries)
+            self._write_summaries_to_file(summaries, window_end_local)
 
         return summaries
 
-    def _write_summaries_to_file(self, summaries: List[str]) -> str:
+    def _write_summaries_to_file(self, summaries: List[str], window_end_local: datetime) -> str:
         """Write summaries to structured file path
 
         Args:
             summaries: List of summary texts
+            window_end_local: End of the processed window in local time
 
         Returns:
             Path to written file
         """
-        now = TimezoneManager.now_local(self.config)
-        year = now.strftime('%Y')
-        month = now.strftime('%m')
-        date_str = now.strftime('%Y%m%d')
+        year = window_end_local.strftime('%Y')
+        month = window_end_local.strftime('%m')
+        date_str = window_end_local.strftime('%Y%m%d')
 
         # Create directory structure
         output_dir = self.summary_dir / year / month
@@ -283,7 +326,7 @@ Format the summary as follows:
         # Write summaries to file
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(f"# Daily Summary - {date_str}\n\n")
-            f.write(f"Generated on: {now.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"Generated on: {window_end_local.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n")
 
             non_minor_count = 0
             for i, summary in enumerate(summaries):

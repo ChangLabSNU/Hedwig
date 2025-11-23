@@ -22,14 +22,16 @@
 """External content manager for including additional Markdown files in overview generation"""
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
+
+from ..utils.config import Config
 
 
 class ExternalContentManager:
     """Manages external Markdown content files for overview generation"""
 
-    def __init__(self, config: Dict[str, Any], summary_dir: Path):
+    def __init__(self, config: Config, summary_dir: Path):
         """Initialize external content manager
 
         Args:
@@ -39,11 +41,22 @@ class ExternalContentManager:
         self.config = config
         self.summary_dir = summary_dir
         self.logger = logging.getLogger('Hedwig.overview.external_content')
-        
-        # Get external content configuration
-        self.external_config = config.get('external_content', {})
-        self.enabled = self.external_config.get('enabled', False)
-        self.sources = self.external_config.get('sources', [])
+
+        # Get external content configuration (always enabled)
+        self.sources = self._load_sources()
+
+    def _load_sources(self) -> List[Dict[str, Any]]:
+        """Load external content sources from the new configuration location."""
+        sources = self.config.get('static_context.external_contents', [])
+
+        if sources is None:
+            return []
+
+        if not isinstance(sources, list):
+            self.logger.warning("Invalid overview.external_contents configuration; expected a list.")
+            return []
+
+        return sources
 
     def fetch_all_content(self, date: str) -> Dict[str, str]:
         """Fetch content from all configured external Markdown files for the given date
@@ -54,9 +67,6 @@ class ExternalContentManager:
         Returns:
             Dictionary mapping source names to content strings
         """
-        if not self.enabled:
-            return {}
-
         external_content = {}
         
         # Parse date to get year and month

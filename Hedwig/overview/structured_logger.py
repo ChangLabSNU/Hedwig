@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date as date_type
 from pathlib import Path
 from typing import Dict, Optional
@@ -35,9 +36,9 @@ class StructuredLogger(OverviewBase):
 
     # Default prompt template for structured log generation
     DEFAULT_OVERVIEW_PROMPT_TEMPLATE = """\
-You are an automated research note management program for {lab_info}.
+You are an automated research note management program for {lab_intro}.
 
-The following includes the summaries of all latest changes (of {summary_range}) to research notes.
+The following includes the summaries of all latest changes to research notes.
 Transform them into structured machine-readable logs that can be ingested by downstream databases.
 Summaries must be concise, factual, and free of decorative or conversational language.
 Never omit impactful updates, experiment outcomes, blockers, or next steps.
@@ -100,12 +101,8 @@ Use the following context information minimally and reference it only when neces
             default_context_prefix=self.DEFAULT_CONTEXT_INFORMATION_PREFIX
         )
 
-        settings = self.config.get('overview.jsonl_output', {}) or {}
-        self.enabled = bool(settings.get('enabled', False))
-        self.output_suffix = settings.get('file_suffix', '-summary.jsonl')
-
-        if not self.enabled:
-            return
+        self.enabled = True
+        self.output_suffix = '-daily.jsonl'
 
         self.prompt_template = self.config.get('api.llm.jsonl_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
         self.model = self.config.get('api.llm.jsonl_output_model', self.config.get('api.llm.overview_model', 'gemini-2.5-pro'))
@@ -116,10 +113,6 @@ Use the following context information minimally and reference it only when neces
         target_date: Optional[date_type] = None
     ) -> Optional[str]:
         """Generate structured JSONL logs for the specified date."""
-        if not self.enabled:
-            self.logger.info("Structured JSONL output is disabled.")
-            return None
-
         resolved_date = self._resolve_target_date(target_date)
         llm_input = self._prepare_llm_input(resolved_date)
         if not llm_input:
@@ -141,45 +134,34 @@ Use the following context information minimally and reference it only when neces
             self.logger.info("Structured logger returned empty structured output.")
             return None
 
+        normalized = self._normalize_unicode(cleaned)
+        if not normalized:
+            self.logger.info("Structured logger returned only invalid/empty JSON lines.")
+            return None
+
         if write_to_file:
-            self._write_structured_output(cleaned, resolved_date)
+            self._write_structured_output(normalized, resolved_date)
 
-        return cleaned
+        return normalized
 
-    def _build_prompt_for_weekday(self, weekday: int) -> str:
-        """Build the structured logger prompt for the specified weekday."""
-        if weekday < 0 or weekday >= len(self.weekday_names):
-            return ''
-
-        day_name = self.weekday_names[weekday]
-        default_config = self.default_weekday_config.get(day_name)
-
-        if default_config is None:
-            return ''
-
-        day_config = self.weekday_config.get(day_name, default_config)
+    def _build_prompt(self) -> str:
+        """Build the structured logger prompt for a single-day window."""
         context_info = self._get_static_context_information()
 
         full_config = {
-            **day_config,
             **self.lang_instructions,
-            'forthcoming_range': day_config.get('forthcoming_range', 'upcoming period'),
-            'lab_info': self.lab_info,
+            'lab_intro': self.lab_intro,
             'context_information': context_info
         }
 
         return self.prompt_template.format(**full_config)
 
     def _get_static_context_information(self) -> str:
-        """Return context block derived only from the static plugin configuration."""
-        static_config = self.config.get('overview.context_plugins.static', {})
-        if not isinstance(static_config, dict):
+        """Return context block derived from static_context.lab_status."""
+        content = self.config.get('static_context.lab_status', '')
+        if not isinstance(content, str):
             return ''
-
-        if not static_config.get('enabled'):
-            return ''
-
-        content = static_config.get('content', '').strip()
+        content = content.strip()
         if not content:
             return ''
 
@@ -187,8 +169,7 @@ Use the following context information minimally and reference it only when neces
         return f"{self.context_info_prefix}{separator}{content}"
 
     def _get_prompt_for_date(self, target_date: date_type) -> str:
-        weekday = target_date.weekday()
-        return self._build_prompt_for_weekday(weekday)
+        return self._build_prompt()
 
     def _structured_output_path(self, target_date: date_type) -> Path:
         base_dir = self.summary_dir / target_date.strftime('%Y') / target_date.strftime('%m')
@@ -197,8 +178,6 @@ Use the following context information minimally and reference it only when neces
 
     def structured_output_path(self, target_date: date_type) -> Optional[Path]:
         """Expose the structured output path for freshness checks."""
-        if not self.enabled:
-            return None
         return self._structured_output_path(target_date)
 
     def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
@@ -246,9 +225,6 @@ Use the following context information minimally and reference it only when neces
 
     def is_up_to_date(self, target_date: Optional[date_type] = None) -> bool:
         """Check whether the structured JSONL log is current for the given date."""
-        if not self.enabled:
-            return True
-
         resolved_date = self._resolve_target_date(target_date)
         return self._get_up_to_date_structured_log_path(resolved_date) is not None
 
@@ -277,3 +253,23 @@ Use the following context information minimally and reference it only when neces
             cleaned_lines.append(line)
 
         return "\n".join(cleaned_lines).strip()
+
+    def _normalize_unicode(self, data: str) -> str:
+        """Decode unicode escapes in JSONL entries while preserving structure."""
+        if not data:
+            return ""
+
+        normalized_lines = []
+        for line in data.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            try:
+                obj = json.loads(stripped)
+                normalized_lines.append(json.dumps(obj, ensure_ascii=False))
+            except json.JSONDecodeError:
+                # Keep original line if it can't be parsed
+                normalized_lines.append(stripped)
+
+        return "\n".join(normalized_lines).strip()

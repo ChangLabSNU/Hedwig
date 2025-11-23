@@ -21,8 +21,9 @@
 
 """Main overview generation module for creating overview summaries"""
 
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 import re
+import json
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -36,10 +37,11 @@ class OverviewGenerator(OverviewBase):
 
     # Default prompt template for overview generation
     DEFAULT_OVERVIEW_PROMPT_TEMPLATE = """\
-You are an automated research note management program for {lab_info}.
+You are an automated research note management program for {lab_intro}.
 
-The following includes the summaries of all latest changes (of {summary_range}) to research notes.
-Write a brief overview summary of the changes in a bullet-point format, focusing on the most significant changes and their implications for the research.
+The following Markdown contains daily summaries of research note changes from {summary_range}. Each bullet lists authors and an English summary.
+Write a concise Markdown overview of the combined updates, focusing on the most significant changes and their implications for the research.
+Present the research updates as a single bulleted list with at most two levels of bullets; merge related items so the list stays compact.
 Group similar changes together and highlight the most important updates.
 Attribute the authors of the changes to the summaries unless the changes are just simple edits or formatting changes.
 {language_specific_instructions}
@@ -106,6 +108,8 @@ Use the following context information minimally only at the appropriate places i
 
         # Prompt configuration (built lazily)
         self.prompt_template = self.config.get('api.llm.overview_prompt_template', self.DEFAULT_OVERVIEW_PROMPT_TEMPLATE)
+        self.daily_log_suffix = '-daily.jsonl'
+        self.num_days_by_weekday = self.config.get('overview.num_days_by_weekday', {})
 
     def _initialize_context_plugins(self):
         """Initialize context plugins from configuration"""
@@ -116,7 +120,15 @@ Use the following context information minimally only at the appropriate places i
         from .context_plugins import date  # noqa: F401
 
         # Get context plugins configuration
-        context_config = self.config.get('overview.context_plugins', {})
+        context_config = self.config.get('overview.context_plugins', {}) or {}
+
+        static_status_raw = self.config.get('static_context.lab_status', '')
+        static_status = static_status_raw.strip() if isinstance(static_status_raw, str) else ''
+        if static_status:
+            context_config['static'] = {
+                'enabled': True,
+                'content': static_status
+            }
 
         # Add timezone to each plugin's config
         global_timezone = self.config.get('global.timezone', 'UTC')
@@ -158,31 +170,111 @@ Use the following context information minimally only at the appropriate places i
         # Combine all context parts with double newlines
         return self.context_info_prefix + "\n\n".join(context_parts)
 
-    def _build_prompt_for_weekday(self, weekday: int) -> str:
-        """Construct the prompt for a given weekday using current context."""
-        if weekday < 0 or weekday >= len(self.weekday_names):
-            return ''
-
-        day_name = self.weekday_names[weekday]
-        default_config = self.default_weekday_config.get(day_name)
-
-        if default_config is None:
-            return ''
-
-        day_config = self.weekday_config.get(day_name, default_config)
+    def _build_prompt(self, summary_range: str) -> str:
+        """Construct the prompt using current context."""
         context_info = self._get_context_information()
+
+        day_config = {
+            'summary_range': summary_range,
+            'forthcoming_range': 'upcoming period'
+        }
 
         full_config = {
             **day_config,
             **self.lang_instructions,
-            'lab_info': self.lab_info,
+            'lab_intro': self.lab_intro,
             'context_information': context_info
         }
 
         return self.prompt_template.format(**full_config)
 
+    def _get_lookback_days(self, target_date: date_type) -> int:
+        """Return number of days to include based on weekday configuration."""
+        weekday_name = self.weekday_names[target_date.weekday()]
+        configured = self.num_days_by_weekday or {}
+        try:
+            days = int(configured.get(weekday_name, 1))
+        except (TypeError, ValueError):
+            days = 1
+
+        if days < 0:
+            days = 0
+        return days
+
+    def _get_date_window(self, end_date: date_type, days: int) -> list[date_type]:
+        """Return list of dates (inclusive) from end_date going back (days) days."""
+        return [end_date - timedelta(days=offset) for offset in reversed(range(days))]
+
+    def _get_summary_range_text(self) -> str:
+        """Human-readable summary range text based on lookback days."""
+        days = self._get_lookback_days(TimezoneManager.get_local_date(self.config))
+        if days == 1:
+            return "the past day"
+        if days == 0:
+            return "no days (disabled)"
+        return f"the past {days} days"
+
+    def _get_daily_log_path(self, target_date: date_type) -> Path:
+        """Return the path to the structured daily JSONL log for a date."""
+        base_dir = self._get_base_dir_for_date(target_date)
+        filename = f"{target_date.strftime('%Y%m%d')}{self.daily_log_suffix}"
+        return base_dir / filename
+
+    def _load_daily_logs(self, dates: list[date_type]) -> Optional[str]:
+        """Load structured JSONL logs, convert to compact Markdown, and append external content."""
+        sections = []
+
+        for current_date in dates:
+            log_path = self._get_daily_log_path(current_date)
+            formatted_lines = []
+
+            if log_path.exists():
+                raw_lines = log_path.read_text(encoding='utf-8').splitlines()
+                for line in raw_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    authors = record.get('authors') or []
+                    authors_text = ", ".join(authors) if authors else "Unknown authors"
+                    summary = record.get('summary_en') or record.get('summary')
+                    if not summary:
+                        continue
+
+                    formatted_lines.append(f"- {authors_text}: {summary}")
+
+            else:
+                self.logger.info("Structured log not found for %s: %s", current_date, log_path)
+
+            external_content = self.external_content_manager.fetch_all_content(
+                current_date.strftime('%Y-%m-%d')
+            )
+            formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
+
+            if not formatted_lines and not formatted_external:
+                continue
+
+            section_parts = [f"Date: {current_date.strftime('%Y-%m-%d')}"]
+            if formatted_lines:
+                section_parts.append("Research summaries (compact bullet list):")
+                section_parts.append("\n".join(formatted_lines))
+            if formatted_external:
+                section_parts.append("External content:")
+                section_parts.append(formatted_external)
+
+            sections.append("\n".join(section_parts))
+
+        if not sections:
+            return None
+
+        return "\n\n".join(sections)
+
     def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
-        """Prepare the LLM input by gathering summaries and external content
+        """Prepare the LLM input by gathering structured daily logs and external content
 
         Args:
             target_date: Date being processed
@@ -190,18 +282,18 @@ Use the following context information minimally only at the appropriate places i
         Returns:
             Dictionary with 'prompt' and 'user_input' keys, or None if no data available
         """
-        full_input = self._get_llm_user_input(target_date)
+        lookback_days = self._get_lookback_days(target_date)
+        if lookback_days == 0:
+            self.logger.info("Overview generation skipped: lookback days set to 0 for this weekday.")
+            return None
+        date_window = self._get_date_window(target_date, lookback_days)
+
+        full_input = self._load_daily_logs(date_window)
         if not full_input:
             return None
 
-        # Get the appropriate prompt for today
-        current_weekday = TimezoneManager.get_local_weekday(self.config)
-        selected_prompt = self._build_prompt_for_weekday(current_weekday)
-
-        if not selected_prompt:
-            # Sunday - no summary
-            self.logger.info("No overview generated on Sunday")
-            return None
+        summary_range = self._get_summary_range_text()
+        selected_prompt = self._build_prompt(summary_range)
 
         return {
             'prompt': selected_prompt,
@@ -225,7 +317,11 @@ Use the following context information minimally only at the appropriate places i
         if not overview_path.exists():
             return None
 
-        source_files = self._get_source_files(resolved_date)
+        lookback_days = self._get_lookback_days(resolved_date)
+        if lookback_days == 0:
+            return None
+        date_window = self._get_date_window(resolved_date, lookback_days)
+        source_files = self._collect_source_files(date_window)
         if not source_files:
             return None
 
@@ -242,7 +338,7 @@ Use the following context information minimally only at the appropriate places i
         write_to_file: bool = True,
         target_date: Optional[date_type] = None
     ) -> Optional[str]:
-        """Generate overview from individual summaries for a given date
+        """Generate overview from structured daily summaries for a given date
 
         Args:
             write_to_file: Whether to write overview to file
@@ -333,3 +429,27 @@ Use the following context information minimally only at the appropriate places i
         text = re.sub(r"```[^\n]*\n", "", text)
         text = text.replace("```", "")
         return text.strip()
+
+    def _collect_source_files(self, dates: list[date_type]) -> Optional[list[Path]]:
+        """Gather all source files (JSONL + external content) for freshness checks."""
+        source_files: list[Path] = []
+
+        for current_date in dates:
+            log_path = self._get_daily_log_path(current_date)
+            if log_path.exists():
+                source_files.append(log_path)
+
+            date_str_for_file = current_date.strftime('%Y%m%d')
+            base_dir = self._get_base_dir_for_date(current_date)
+            for source in self.external_content_manager.sources:
+                suffix = source.get('file_suffix')
+                if not suffix:
+                    continue
+                candidate = base_dir / f"{date_str_for_file}{suffix}"
+                if candidate.exists():
+                    source_files.append(candidate)
+
+        if not source_files:
+            return None
+
+        return source_files
