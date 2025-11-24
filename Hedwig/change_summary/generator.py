@@ -25,7 +25,7 @@ from typing import List, Optional, Dict, Tuple
 from pathlib import Path
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
@@ -112,21 +112,38 @@ Format the summary as follows:
             self.logger.warning("Unable to parse logical_day_start '%s'; falling back to 4.", value)
         return 4
 
-    def _determine_time_window(self) -> Tuple[datetime, datetime, datetime, datetime]:
+    def _determine_time_window(
+        self,
+        target_date: Optional[date] = None
+    ) -> Tuple[datetime, datetime, datetime, datetime]:
         """Compute the 24h window anchored to the configured logical day start."""
-        now_local = TimezoneManager.now_local(self.config)
         logical_start_hour = self._get_logical_day_start_hour()
+        tz = TimezoneManager.get_configured_timezone(self.config)
 
-        window_end_local = now_local.replace(
-            hour=logical_start_hour,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
+        if target_date:
+            # Use the provided date to anchor the 24h window
+            window_end_local = tz.localize(
+                datetime(
+                    target_date.year,
+                    target_date.month,
+                    target_date.day,
+                    logical_start_hour,
+                    0,
+                    0
+                )
+            )
+        else:
+            now_local = TimezoneManager.now_local(self.config)
+            window_end_local = now_local.replace(
+                hour=logical_start_hour,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
 
-        # If we've passed today's logical start, anchor to it; otherwise use yesterday's
-        if now_local < window_end_local:
-            window_end_local -= timedelta(days=1)
+            # If we've passed today's logical start, anchor to it; otherwise use yesterday's
+            if now_local < window_end_local:
+                window_end_local -= timedelta(days=1)
 
         window_start_local = window_end_local - timedelta(hours=24)
 
@@ -265,23 +282,32 @@ Format the summary as follows:
                 summaries.append(summary)
         return summaries
 
-    def generate(self, write_to_file: bool = True) -> List[str]:
+    def generate(self, write_to_file: bool = True, target_date: Optional[date] = None) -> List[str]:
         """Generate summaries for recent changes
 
         Args:
             write_to_file: Whether to write summaries to file
+            target_date: Logical date (YYYY-MM-DD) whose window should be processed instead of today
 
         Returns:
             List of generated summaries
         """
         self.logger.info("Starting summary generation...")
 
-        window_start_local, window_end_local, window_start_utc, window_end_utc = self._determine_time_window()
-        self.logger.info(
-            "Processing window: %s to %s (24h fixed)",
-            window_start_local.strftime('%Y-%m-%d %H:%M %Z'),
-            window_end_local.strftime('%Y-%m-%d %H:%M %Z')
-        )
+        window_start_local, window_end_local, window_start_utc, window_end_utc = self._determine_time_window(target_date)
+        if target_date:
+            self.logger.info(
+                "Processing window for target date %s: %s to %s (24h fixed)",
+                target_date.strftime('%Y-%m-%d'),
+                window_start_local.strftime('%Y-%m-%d %H:%M %Z'),
+                window_end_local.strftime('%Y-%m-%d %H:%M %Z')
+            )
+        else:
+            self.logger.info(
+                "Processing window: %s to %s (24h fixed)",
+                window_start_local.strftime('%Y-%m-%d %H:%M %Z'),
+                window_end_local.strftime('%Y-%m-%d %H:%M %Z')
+            )
 
         diffs = self.diff_analyzer.get_diffs_between(window_start_utc, window_end_utc)
 

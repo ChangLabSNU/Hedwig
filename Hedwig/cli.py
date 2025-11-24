@@ -121,6 +121,10 @@ def create_parser():
         action='store_true',
         help='Suppress information messages'
     )
+    change_summary_parser.add_argument(
+        '--date',
+        help='Date (YYYY-MM-DD) whose changes should be processed instead of today'
+    )
 
     # Generate structured daily summary logs
     daily_summary_parser = subparsers.add_parser(
@@ -284,7 +288,8 @@ def handle_generate_change_summary(args):
     from .change_summary.generator import ChangeSummaryGenerator
 
     generator = ChangeSummaryGenerator(config_path=args.config, quiet=args.quiet)
-    summaries = generator.generate(write_to_file=not args.no_write)
+    target_date = _parse_target_date(args.date)
+    summaries = generator.generate(write_to_file=not args.no_write, target_date=target_date)
 
     # Print summaries if not writing to file (unless quiet)
     if args.no_write and summaries and not args.quiet:
