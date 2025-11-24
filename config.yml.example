@@ -236,6 +236,12 @@ messaging:
     # Canvas title length limit
     header_max_length: 150
 
+    # Whether to create and post a Slack Canvas with the full details
+    post_details_in_canvas: true
+
+    # If set, include this link in the message (used when Canvas posting is disabled)
+    post_details_link: ''
+
 # ==============================================================================
 # PIPELINE - Automated summary generation and posting
 # ==============================================================================

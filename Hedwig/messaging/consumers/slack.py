@@ -50,6 +50,8 @@ class SlackConsumer(MessageConsumer):
 
         # Set default channel
         self.default_channel = self.config.get('channel_id')
+        self.post_details_in_canvas = self.config.get('post_details_in_canvas', True)
+        self.post_details_link = self.config.get('post_details_link', '')
 
     def _validate_config(self) -> None:
         """Validate Slack configuration"""
@@ -216,6 +218,24 @@ class SlackConsumer(MessageConsumer):
             self.logger.info(f"Message sent successfully to {channel_id}")
 
         return result
+
+    def send_with_document(self, content: MessageContent, channel: Optional[str] = None) -> MessageResult:
+        """Send message with optional Canvas depending on configuration."""
+        if not self.post_details_in_canvas:
+            metadata = dict(content.metadata or {})
+            details_link = (self.post_details_link or "").strip()
+            if details_link:
+                metadata["document_url"] = details_link
+
+            message_content = MessageContent(
+                title=content.title,
+                markdown_content=content.markdown_content,
+                notification_text=content.notification_text,
+                metadata=metadata or None,
+            )
+            return self.send_message(message_content, channel)
+
+        return super().send_with_document(content, channel)
 
     def send_document(self, content: MessageContent, channel: Optional[str] = None) -> MessageResult:
         """Create a Slack Canvas document
