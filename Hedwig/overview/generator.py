@@ -221,14 +221,19 @@ Use the following context information minimally only at the appropriate places i
         return base_dir / filename
 
     def _load_daily_logs(self, dates: list[date_type]) -> Optional[str]:
-        """Load structured JSONL logs, convert to compact Markdown, and append external content."""
+        """Load structured JSONL logs and convert to compact Markdown.
+
+        Daily summaries already contain digests of external content (e.g., Slack, GitLab)
+        produced by generate-daily-summary, so we do not reload those sources here.
+        """
         sections = []
 
         for current_date in dates:
             log_path = self._get_daily_log_path(current_date)
+            log_exists = log_path.exists()
             formatted_lines = []
 
-            if log_path.exists():
+            if log_exists:
                 raw_lines = log_path.read_text(encoding='utf-8').splitlines()
                 for line in raw_lines:
                     line = line.strip()
@@ -250,21 +255,15 @@ Use the following context information minimally only at the appropriate places i
             else:
                 self.logger.info("Structured log not found for %s: %s", current_date, log_path)
 
-            external_content = self.external_content_manager.fetch_all_content(
-                current_date.strftime('%Y-%m-%d')
-            )
-            formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
-
-            if not formatted_lines and not formatted_external:
+            if not formatted_lines:
+                if log_exists:
+                    self.logger.info("Structured log contains no entries for %s: %s", current_date, log_path)
                 continue
 
             section_parts = [f"Date: {current_date.strftime('%Y-%m-%d')}"]
             if formatted_lines:
                 section_parts.append("Research summaries (compact bullet list):")
                 section_parts.append("\n".join(formatted_lines))
-            if formatted_external:
-                section_parts.append("External content:")
-                section_parts.append(formatted_external)
 
             sections.append("\n".join(section_parts))
 
@@ -274,7 +273,7 @@ Use the following context information minimally only at the appropriate places i
         return "\n\n".join(sections)
 
     def _prepare_llm_input(self, target_date: date_type) -> Optional[Dict[str, str]]:
-        """Prepare the LLM input by gathering structured daily logs and external content
+        """Prepare the LLM input by gathering structured daily logs
 
         Args:
             target_date: Date being processed
@@ -431,23 +430,13 @@ Use the following context information minimally only at the appropriate places i
         return text.strip()
 
     def _collect_source_files(self, dates: list[date_type]) -> Optional[list[Path]]:
-        """Gather all source files (JSONL + external content) for freshness checks."""
+        """Gather structured JSONL logs for freshness checks."""
         source_files: list[Path] = []
 
         for current_date in dates:
             log_path = self._get_daily_log_path(current_date)
             if log_path.exists():
                 source_files.append(log_path)
-
-            date_str_for_file = current_date.strftime('%Y%m%d')
-            base_dir = self._get_base_dir_for_date(current_date)
-            for source in self.external_content_manager.sources:
-                suffix = source.get('file_suffix')
-                if not suffix:
-                    continue
-                candidate = base_dir / f"{date_str_for_file}{suffix}"
-                if candidate.exists():
-                    source_files.append(candidate)
 
         if not source_files:
             return None
