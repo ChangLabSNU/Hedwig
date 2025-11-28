@@ -50,7 +50,7 @@ Structured output requirements:
 1. Respond **only** with JSON Lines (JSONL). Each line must be a standalone valid JSON object encoded in UTF-8, no extra prose or Markdown fencing.
 2. Every JSON object must contain **only** the following keys:
    - `"authors"`: array of canonical English names responsible for the change (empty array if unknown).
-   - `"source"`: string identifying the origin of the update. For research note entries, use the `Document ID: <MMDD-n>` bullet included in each summary. For Slack or GitLab inputs, use the nearest preceding level-3 heading text (e.g., channel or project name). Never emit raw UUID values. If no source is available, use `"unknown"`.
+   - `"source"`: string identifying the origin of the update. Use the prefix `notion:` plus the `Document ID: <MMDD-n>` bullet for research note entries. For Slack inputs, use `slack:` plus the nearest preceding level-3 heading (channel name). For GitLab inputs, use `gitlab:` plus the nearest preceding level-3 heading (project name). Never emit raw UUID values. If no source is available, use `"unknown"`.
    - `"summary_en"`: Concise English sentence(s) capturing the key updates, risks, and next steps in active voice.
    {language_summary_key_instruction}
 3. Produce one JSON object per thematic cluster or notable change, grouping closely related issues within the same project into a single summarized entry. Ensure all significant updates are included.
