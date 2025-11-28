@@ -139,6 +139,7 @@ class DiffAnalyzer:
             raise ValueError("No file path found in diff header")
 
         fullpath = self.repo_path / filepath
+        document_uuid = Path(filepath).stem
 
         # Read metadata from file header
         try:
@@ -180,13 +181,17 @@ class DiffAnalyzer:
                         header['Editors'] = header['Last Edited By']
                         del header['Last Edited By']
 
+                if document_uuid:
+                    header['Document UUID'] = document_uuid
+
                 return header
         except Exception as e:
             self.logger.error(f"Error reading metadata from {fullpath}: {e}")
             return {
                 'Title': 'Unknown',
                 'Page Location': str(filepath),
-                'Editors': 'Unknown'
+                'Editors': 'Unknown',
+                'Document UUID': document_uuid
             }
 
     @staticmethod

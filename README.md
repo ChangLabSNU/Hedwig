@@ -202,6 +202,10 @@ hedwig generate-change-summary [--config CONFIG] [--no-write]
 - `--no-write`: Print to stdout instead of saving to file
 - Uses a fixed 24-hour window anchored to `global.timezone` and `global.logical_day_start` (default 4 AM) to decide which commits to summarize
 
+**Outputs:**
+- Markdown summaries are written to `YYYY/MM/YYYYMMDD-indiv.md`, with each section adding `- Document ID: MMDD-n` (unique within the year) inside its metadata list.
+- A companion CSV `YYYY/MM/YYYYMMDD-indiv-sources.csv` maps each `id` to the Notion document UUID (`uuid` column).
+
 **Auto User Sync:**
 When `change_summary.auto_sync_userlist` is set to `true` (default), the command will automatically run `sync-userlist` if it encounters user IDs not found in the user list. This ensures that new team members are automatically added to the user list. Set to `false` to disable this behavior.
 

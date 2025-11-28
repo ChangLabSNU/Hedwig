@@ -293,7 +293,7 @@ def handle_generate_change_summary(args):
 
     # Print summaries if not writing to file (unless quiet)
     if args.no_write and summaries and not args.quiet:
-        print("\n---\n".join(summaries))
+        print("\n---\n".join(summary.text for summary in summaries))
 
 
 def handle_generate_daily_summary(args):

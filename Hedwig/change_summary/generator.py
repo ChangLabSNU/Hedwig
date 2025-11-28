@@ -21,6 +21,8 @@
 
 """Main change summary generation module"""
 
+import csv
+from dataclasses import dataclass
 from typing import List, Optional, Dict, Tuple
 from pathlib import Path
 import os
@@ -32,6 +34,14 @@ from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
 from ..llm import LLMClient
 from .diff_analyzer import DiffAnalyzer
+
+
+@dataclass
+class GeneratedSummary:
+    """Container for a generated summary and its source document identifier."""
+
+    text: str
+    source_uuid: Optional[str]
 
 
 class ChangeSummaryGenerator:
@@ -227,7 +237,7 @@ Format the summary as follows:
         diff: str,
         index: int,
         time_window: Optional[Tuple[datetime, datetime]] = None
-    ) -> Optional[str]:
+    ) -> Optional[GeneratedSummary]:
         """Process a single diff and generate summary
 
         Args:
@@ -236,7 +246,7 @@ Format the summary as follows:
             max_age_seconds: Maximum age for editor tracking
 
         Returns:
-            Formatted summary or None if processing failed
+            GeneratedSummary containing formatted summary text and source UUID, or None if failed
         """
         try:
             # Extract metadata
@@ -255,7 +265,10 @@ Format the summary as follows:
             meta_formatted = self.METAINFO_FORMAT.format(**metadata)
             full_summary = meta_formatted + summary
 
-            return full_summary
+            return GeneratedSummary(
+                text=full_summary,
+                source_uuid=metadata.get('Document UUID')
+            )
 
         except Exception as e:
             self.logger.error(f"Error processing diff {index}: {e}")
@@ -265,7 +278,7 @@ Format the summary as follows:
         self,
         diffs: List[str],
         time_window: Optional[Tuple[datetime, datetime]] = None
-    ) -> List[str]:
+    ) -> List[GeneratedSummary]:
         """Process a list of diffs and generate summaries
 
         Args:
@@ -275,14 +288,14 @@ Format the summary as follows:
         Returns:
             List of generated summaries
         """
-        summaries = []
+        summaries: List[GeneratedSummary] = []
         for i, diff in enumerate(diffs):
             summary = self._process_single_diff(diff, i, time_window=time_window)
             if summary:
                 summaries.append(summary)
         return summaries
 
-    def generate(self, write_to_file: bool = True, target_date: Optional[date] = None) -> List[str]:
+    def generate(self, write_to_file: bool = True, target_date: Optional[date] = None) -> List[GeneratedSummary]:
         """Generate summaries for recent changes
 
         Args:
@@ -327,15 +340,15 @@ Format the summary as follows:
 
         return summaries
 
-    def _write_summaries_to_file(self, summaries: List[str], window_end_local: datetime) -> str:
-        """Write summaries to structured file path
+    def _write_summaries_to_file(self, summaries: List[GeneratedSummary], window_end_local: datetime) -> str:
+        """Write summaries and source mapping to structured file paths.
 
         Args:
-            summaries: List of summary texts
+            summaries: List of generated summaries with source UUIDs
             window_end_local: End of the processed window in local time
 
         Returns:
-            Path to written file
+            Path to written summary file
         """
         year = window_end_local.strftime('%Y')
         month = window_end_local.strftime('%m')
@@ -355,29 +368,51 @@ Format the summary as follows:
             f.write(f"Generated on: {window_end_local.strftime('%Y-%m-%d %H:%M:%S %Z')}\n\n")
 
             non_minor_count = 0
+            mapping_rows: List[Tuple[str, Optional[str]]] = []
             for i, summary in enumerate(summaries):
                 # Skip minor changes
-                if '\n- Classification: minor' in summary:
+                if '\n- Classification: minor' in summary.text:
                     self.logger.info(f"Skipping minor summary {i + 1}")
                     continue
 
                 if non_minor_count > 0:
                     f.write("\n---\n\n")
 
+                document_id = f"{window_end_local.strftime('%m%d')}-{non_minor_count + 1}"
+
                 # Extract subject from summary
-                subject_title = self._extract_subject(summary, i + 1)
+                subject_title = self._extract_subject(summary.text, i + 1)
 
                 # Remove the Subject line from summary to avoid duplication
-                filtered_summary = self._remove_subject_line(summary)
+                filtered_summary = self._remove_subject_line(summary.text)
 
                 f.write(f"## {subject_title}\n\n")
-                f.write(filtered_summary)
+                summary_with_id = self._insert_document_id(filtered_summary, document_id)
+                f.write(summary_with_id)
                 f.write("\n")
 
                 non_minor_count += 1
+                mapping_rows.append((document_id, summary.source_uuid))
 
+        mapping_path = self._write_source_mapping(output_dir, date_str, mapping_rows)
         self.logger.info(f"Summaries written to: {filepath}")
+        self.logger.info(f"Source mapping written to: {mapping_path}")
         return str(filepath)
+
+    def _write_source_mapping(
+        self,
+        output_dir: Path,
+        date_str: str,
+        mapping_rows: List[Tuple[str, Optional[str]]]
+    ) -> str:
+        """Write id-to-uuid mapping for the day's summaries."""
+        mapping_path = output_dir / f'{date_str}-indiv-sources.csv'
+        with open(mapping_path, 'w', encoding='utf-8', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['id', 'uuid'])
+            for doc_id, source_uuid in mapping_rows:
+                writer.writerow([doc_id, source_uuid or ''])
+        return str(mapping_path)
 
     def _extract_subject(self, summary: str, index: int) -> str:
         """Extract subject from summary text
@@ -407,3 +442,10 @@ Format the summary as follows:
         lines = summary.split('\n')
         filtered_lines = [line for line in lines if not line.strip().startswith('- Subject:')]
         return '\n'.join(filtered_lines)
+
+    @staticmethod
+    def _insert_document_id(summary: str, document_id: str) -> str:
+        """Insert the document ID as the first bullet in the metadata list."""
+        lines = summary.split('\n')
+        lines.insert(0, f"- Document ID: {document_id}")
+        return '\n'.join(lines)
