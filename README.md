@@ -224,6 +224,7 @@ hedwig generate-daily-summary [--config CONFIG] [--no-write] [--force] [--date Y
 - `--quiet`: Suppress informational messages
 
 Structured JSONL output must be enabled with `overview.jsonl_output.enabled: true` in `config.yml`.
+Each JSONL line includes `authors` (array), `source` (Document ID or external heading such as Slack channel/GitLab project), and summaries (`summary_en` plus the localized summary key for the configured language).
 
 ### `hedwig generate-overview`
 Creates Markdown team-focused overview summaries from individual change summaries.
