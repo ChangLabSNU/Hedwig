@@ -161,22 +161,20 @@ class OverviewBase:
         indiv_filepath = self._get_individual_summary_path(target_date)
         self.logger.info(f"Checking for individual summary file: {indiv_filepath}")
 
-        if not indiv_filepath.exists():
-            self.logger.info("Individual summary file does not exist. Nothing to process.")
-            return None
+        content = ""
+        if indiv_filepath.exists():
+            try:
+                content = indiv_filepath.read_text(encoding='utf-8').strip()
 
-        try:
-            content = indiv_filepath.read_text(encoding='utf-8').strip()
+                if content:
+                    self.logger.info(f"Found individual summary file with {len(content)} characters")
+                else:
+                    self.logger.info("Individual summary file is empty.")
 
-            if not content:
-                self.logger.info("Individual summary file is empty. Nothing to process.")
-                return None
-
-            self.logger.info(f"Found individual summary file with {len(content)} characters")
-
-        except Exception as exc:
-            self.logger.error(f"Error reading individual summary file: {exc}")
-            return None
+            except Exception as exc:
+                self.logger.error(f"Error reading individual summary file: {exc}")
+        else:
+            self.logger.info("Individual summary file does not exist.")
 
         self.logger.info("Checking for external content sources...")
         external_content = self.external_content_manager.fetch_all_content(
@@ -184,12 +182,19 @@ class OverviewBase:
         )
 
         full_input = content
+        formatted_external = ""
 
         if external_content:
             self.logger.info(f"Found external content from {len(external_content)} source(s)")
             formatted_external = self.external_content_manager.format_content_for_prompt(external_content)
-            full_input = content + "\n\n" + formatted_external
+            if not full_input:
+                formatted_external = formatted_external.lstrip("\n")
+            full_input = (full_input + "\n\n" if full_input else "") + formatted_external
         else:
             self.logger.info("No external content found.")
+
+        if not full_input:
+            self.logger.info("No summary content or external content available. Nothing to process.")
+            return None
 
         return full_input

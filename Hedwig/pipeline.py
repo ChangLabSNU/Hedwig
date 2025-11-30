@@ -23,10 +23,11 @@
 
 import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .change_summary.generator import ChangeSummaryGenerator
 from .overview.generator import OverviewGenerator
+from .overview.external_content import ExternalContentManager
 from .overview.structured_logger import StructuredLogger
 from .messaging.manager import MessageManager
 from .utils.config import Config
@@ -88,6 +89,15 @@ class SummarizerPipeline:
 
         return individual_file, overview_file, today
 
+    def _load_external_content(self, target_date: datetime.date) -> Dict[str, str]:
+        """Fetch external content for the target date if available."""
+        try:
+            manager = ExternalContentManager(self.config, self.summary_dir)
+            return manager.fetch_all_content(target_date.strftime('%Y-%m-%d'))
+        except Exception as exc:
+            self.logger.error(f"Failed to load external content: {exc}")
+            return {}
+
     def run(self, post_summary: bool = True) -> bool:
         """Run the complete summarizer pipeline
 
@@ -128,10 +138,16 @@ class SummarizerPipeline:
                 self.logger.error(f"Failed to generate change summaries: {e}")
                 return False
 
-            # Check if individual summary file was generated
-            if not individual_file.exists():
-                self.logger.info("No individual summary file generated (possibly no changes). Stopping pipeline.")
-                return True  # This is not an error - just no changes to report
+            external_content = self._load_external_content(today)
+            has_individual_summary = individual_file.exists()
+
+            # If there is truly nothing to process, stop early without treating it as an error.
+            if not has_individual_summary and not external_content:
+                self.logger.info("No individual summaries or external content found for today. Stopping pipeline.")
+                return True
+
+            if not has_individual_summary and external_content:
+                self.logger.info("No individual summaries generated, but external content exists. Continuing pipeline.")
 
             # Step 2: Generate structured daily summary log (if enabled)
             self.logger.info("=" * 60)
@@ -178,6 +194,8 @@ class SummarizerPipeline:
 
             if not post_summary:
                 self.logger.info("Posting skipped because --no-posting was provided.")
+            elif not individual_file.exists():
+                self.logger.info("No individual summary file available for posting. Skipping messaging step.")
             else:
                 try:
                     manager = MessageManager(self.config.config_path, quiet=self.quiet)
