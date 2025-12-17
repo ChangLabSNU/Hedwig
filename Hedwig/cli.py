@@ -222,7 +222,7 @@ def create_parser():
     # Run complete summarizer pipeline
     pipeline_parser = subparsers.add_parser(
         'pipeline',
-        help='Run complete summarizer pipeline (change-summary -> daily-summary -> overview -> post-summary)'
+        help='Run complete summarizer pipeline (change-summary -> daily-summary -> [overview -> post-summary])'
     )
     pipeline_parser.add_argument(
         '--config', '-c',
@@ -233,6 +233,11 @@ def create_parser():
         '--no-posting',
         action='store_true',
         help='Skip posting summaries to messaging platform'
+    )
+    pipeline_parser.add_argument(
+        '--no-overview',
+        action='store_true',
+        help='Skip generating overview and posting summary'
     )
     pipeline_parser.add_argument(
         '--quiet',
@@ -419,7 +424,10 @@ def handle_pipeline(args):
     from .pipeline import SummarizerPipeline
 
     pipeline = SummarizerPipeline(config_path=args.config, quiet=args.quiet)
-    success = pipeline.run(post_summary=not args.no_posting)
+    success = pipeline.run(
+        post_summary=not args.no_posting,
+        generate_overview=not args.no_overview,
+    )
     sys.exit(0 if success else 1)
 
 

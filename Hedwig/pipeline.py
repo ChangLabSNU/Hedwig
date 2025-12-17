@@ -98,11 +98,12 @@ class SummarizerPipeline:
             self.logger.error(f"Failed to load external content: {exc}")
             return {}
 
-    def run(self, post_summary: bool = True) -> bool:
+    def run(self, post_summary: bool = True, generate_overview: bool = True) -> bool:
         """Run the complete summarizer pipeline
 
         Args:
             post_summary: Whether to post generated summaries to messaging platforms.
+            generate_overview: Whether to generate the overview summary (and proceed to posting).
 
         Returns:
             True if successful, False otherwise
@@ -166,68 +167,79 @@ class SummarizerPipeline:
                 self.logger.error(f"Failed to generate structured daily summary log: {e}")
                 return False
 
-            # Step 3: Generate overview
-            self.logger.info("=" * 60)
-            self.logger.info("STEP 3: Generating overview summary")
-            self.logger.info("=" * 60)
+            if not generate_overview:
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 3: Skipping overview generation")
+                self.logger.info("=" * 60)
+                self.logger.info("Overview generation skipped.")
 
-            try:
-                overview_generator = OverviewGenerator(self.config.config_path, quiet=self.quiet)
-                overview = overview_generator.generate(write_to_file=True, target_date=today)
-
-                if not overview:
-                    self.logger.warning("No overview was generated")
-
-            except Exception as e:
-                self.logger.error(f"Failed to generate overview: {e}")
-                return False
-
-            # Check if overview file was generated
-            if not overview_file.exists():
-                self.logger.info("No overview file generated (possibly Sunday or no content). Stopping pipeline.")
-                return True  # This is not an error
-
-            # Step 4: Post to messaging platform
-            self.logger.info("=" * 60)
-            self.logger.info("STEP 4: Posting to messaging platform")
-            self.logger.info("=" * 60)
-
-            if not post_summary:
-                self.logger.info("Posting skipped because --no-posting was provided.")
-            elif not individual_file.exists():
-                self.logger.info("No individual summary file available for posting. Skipping messaging step.")
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 4: Skipping posting to messaging platform")
+                self.logger.info("=" * 60)
+                self.logger.info("Posting skipped because overview generation is disabled.")
             else:
+                # Step 3: Generate overview
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 3: Generating overview summary")
+                self.logger.info("=" * 60)
+
                 try:
-                    manager = MessageManager(self.config.config_path, quiet=self.quiet)
+                    overview_generator = OverviewGenerator(self.config.config_path, quiet=self.quiet)
+                    overview = overview_generator.generate(write_to_file=True, target_date=today)
 
-                    # Check if messaging is configured
-                    if not manager.consumer_name:
-                        self.logger.warning("No messaging platform configured. Skipping posting step.")
-                        return True
-
-                    self.logger.info("Posting with:")
-                    self.logger.info(f"  summary-file: {individual_file}")
-                    self.logger.info(f"  overview-file: {overview_file}")
-                    self.logger.info(f"  title: {title}")
-
-                    result = manager.post_summary(
-                        markdown_file=str(individual_file),
-                        message_file=str(overview_file),
-                        title=title,
-                        channel_override=None
-                    )
-
-                    if result.success:
-                        self.logger.info(f"Successfully posted summary via {manager.consumer_name}")
-                        if result.url:
-                            self.logger.info(f"Summary URL: {result.url}")
-                    else:
-                        self.logger.error(f"Failed to post summary: {result.error}")
-                        return False
+                    if not overview:
+                        self.logger.warning("No overview was generated")
 
                 except Exception as e:
-                    self.logger.error(f"Failed to post summary: {e}")
+                    self.logger.error(f"Failed to generate overview: {e}")
                     return False
+
+                # Check if overview file was generated
+                if not overview_file.exists():
+                    self.logger.info("No overview file generated (possibly Sunday or no content). Stopping pipeline.")
+                    return True  # This is not an error
+
+                # Step 4: Post to messaging platform
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 4: Posting to messaging platform")
+                self.logger.info("=" * 60)
+
+                if not post_summary:
+                    self.logger.info("Posting skipped because --no-posting was provided.")
+                elif not individual_file.exists():
+                    self.logger.info("No individual summary file available for posting. Skipping messaging step.")
+                else:
+                    try:
+                        manager = MessageManager(self.config.config_path, quiet=self.quiet)
+
+                        # Check if messaging is configured
+                        if not manager.consumer_name:
+                            self.logger.warning("No messaging platform configured. Skipping posting step.")
+                            return True
+
+                        self.logger.info("Posting with:")
+                        self.logger.info(f"  summary-file: {individual_file}")
+                        self.logger.info(f"  overview-file: {overview_file}")
+                        self.logger.info(f"  title: {title}")
+
+                        result = manager.post_summary(
+                            markdown_file=str(individual_file),
+                            message_file=str(overview_file),
+                            title=title,
+                            channel_override=None
+                        )
+
+                        if result.success:
+                            self.logger.info(f"Successfully posted summary via {manager.consumer_name}")
+                            if result.url:
+                                self.logger.info(f"Summary URL: {result.url}")
+                        else:
+                            self.logger.error(f"Failed to post summary: {result.error}")
+                            return False
+
+                    except Exception as e:
+                        self.logger.error(f"Failed to post summary: {e}")
+                        return False
 
             # Success
             self.logger.info("=" * 60)
