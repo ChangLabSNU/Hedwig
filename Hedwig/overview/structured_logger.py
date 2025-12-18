@@ -47,7 +47,7 @@ When describing an update, omit the subject if it would be identical to the auth
 {language_specific_instructions}
 
 Structured output requirements:
-1. Respond **only** with JSON Lines (JSONL). Each line must be a standalone valid JSON object encoded in UTF-8, no extra prose or Markdown fencing.
+1. Respond **only** with valid JSON Lines (JSONL) format. **Strictly enforce single-line compaction:** Every JSON object must be rendered on a single physical line with NO line breaks or indentation inside the object (do not pretty-print). Do not use Markdown code fencing (```json) or introductory prose.
 2. Every JSON object must contain **only** the following keys:
    - `"authors"`: array of canonical English names responsible for the change (empty array if unknown).
    - `"source"`: array of strings identifying the origins of the update. For research note entries, read the `Document ID: <MMDD-n>` bullet and emit `notion:<MMDD-n>`. For Slack inputs, use `slack:` plus the nearest preceding level-3 heading (channel name). For GitLab inputs, use `gitlab:` plus the nearest preceding level-3 heading (project name). Never emit raw UUID values. If no source is available, use `["unknown"]`.
