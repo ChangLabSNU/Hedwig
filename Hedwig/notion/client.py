@@ -318,3 +318,39 @@ class NotionClient:
                 users.append(user_info)
 
         return users
+
+    def get_user(self, user_id: str) -> Optional[Dict[str, str]]:
+        """Retrieve a single user by ID.
+
+        Args:
+            user_id: Notion user ID
+
+        Returns:
+            Dictionary containing user information, or None if unavailable
+        """
+        if not user_id:
+            return None
+
+        url = f'https://api.notion.com/v1/users/{user_id}'
+        try:
+            response = requests.request('GET', url, headers=self.headers)
+            if response.status_code >= 400:
+                return None
+
+            user = json.loads(response.text)
+            if not isinstance(user, dict) or 'id' not in user:
+                return None
+
+            name = user.get('name', 'Unknown')
+            if user.get('type') == 'bot' and 'bot' in user:
+                bot_info = user['bot']
+                if 'owner' in bot_info and bot_info['owner'].get('type') == 'user':
+                    name = f"{name} (Bot)"
+
+            return {
+                'id': user['id'],
+                'name': name,
+                'type': user.get('type', 'unknown')
+            }
+        except Exception:
+            return None
