@@ -25,13 +25,12 @@ import csv
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Tuple
 from pathlib import Path
-import os
-import pandas as pd
 from datetime import datetime, timedelta, date
 
 from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
+from ..utils.userlist import load_user_lookup
 from ..llm import LLMClient
 from .diff_analyzer import DiffAnalyzer
 
@@ -169,25 +168,12 @@ Format the summary as follows:
             Dictionary mapping user IDs to names
         """
         userlist_file = self.config.get('paths.userlist_file')
-        if not userlist_file or not os.path.exists(userlist_file):
-            self.logger.warning(f"User list file not found: {userlist_file}")
-            return {}
-
-        try:
-            # Read the TSV file
-            df = pd.read_csv(userlist_file, sep='\t', dtype=str)
-
-            # Create lookup dictionary
-            if 'user_id' in df.columns and 'name' in df.columns:
-                user_lookup = df.set_index('user_id')['name'].to_dict()
-                self.logger.info(f"Loaded {len(user_lookup)} users from {userlist_file}")
-                return user_lookup
-            else:
-                self.logger.warning(f"User list file missing required columns: {userlist_file}")
-                return {}
-        except Exception as e:
-            self.logger.error(f"Error loading user list: {e}")
-            return {}
+        override_file = self.config.get('paths.userlist_override_file')
+        user_lookup = load_user_lookup(userlist_file, override_file, self.logger)
+        if user_lookup:
+            source_label = userlist_file or override_file or "user list files"
+            self.logger.info(f"Loaded {len(user_lookup)} users from {source_label}")
+        return user_lookup
 
     def _handle_unknown_user(self, user_id: str) -> Optional[str]:
         """Handle unknown user ID by syncing user list once
@@ -206,17 +192,14 @@ Format the summary as follows:
         if user_id in self.user_lookup:
             return self.user_lookup[user_id]
 
-        self.logger.info(f"Unknown user ID '{user_id}' found, syncing user list...")
+        self.logger.info(f"Unknown user ID '{user_id}' found, resolving user details...")
         self.has_synced = True
 
         try:
-            # Sync and reload user list
+            # Ensure user IDs are populated in the override file, then reload
             from ..notion.sync import NotionSyncer
             syncer = NotionSyncer(config_path=self.config.config_path)
-            syncer.sync_userlist(quiet=True)
-
-            # Reload the user lookup table
-            new_lookup = self._load_user_lookup()
+            new_lookup = syncer.ensure_user_ids([user_id], self.logger)
             if new_lookup:
                 self.user_lookup = new_lookup
                 self.diff_analyzer.user_lookup = new_lookup

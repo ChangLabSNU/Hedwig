@@ -23,7 +23,7 @@
 
 import os
 from datetime import datetime
-from typing import Optional, Dict, List, Set
+from typing import Optional, Dict, List, Set, Iterable
 
 import pandas as pd
 from dateutil.parser import parse as parse8601
@@ -33,6 +33,7 @@ from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.git import GitManager
 from ..utils.timezone import TimezoneManager
+from ..utils.userlist import load_user_lookup, append_user_overrides, sanitize_user_name
 from .client import NotionClient
 from .exporter import MarkdownExporter
 
@@ -291,64 +292,6 @@ class NotionSyncer:
         if not quiet:
             print(f"Successfully synced {len(merged_df)} users to {userlist_file}")
 
-    def _load_user_lookup(self, logger) -> Dict[str, str]:
-        """Load user lookup table from TSV files."""
-        userlist_file = self.config.get('paths.userlist_file')
-        override_file = self.config.get('paths.userlist_override_file')
-
-        base_df = None
-        if userlist_file and os.path.exists(userlist_file):
-            try:
-                base_df = pd.read_csv(userlist_file, sep='\t', dtype=str)
-                if not {'user_id', 'name'}.issubset(base_df.columns):
-                    logger.warning(f"User list file missing required columns: {userlist_file}")
-                    base_df = None
-            except Exception as e:
-                logger.warning(f"Error loading user list file {userlist_file}: {e}")
-                base_df = None
-        elif userlist_file:
-            logger.warning(f"User list file not found: {userlist_file}")
-
-        override_df = None
-        if override_file and os.path.exists(override_file):
-            try:
-                override_df = pd.read_csv(override_file, sep='\t', dtype=str)
-                if not {'user_id', 'name'}.issubset(override_df.columns):
-                    logger.warning(f"Override file missing required columns: {override_file}")
-                    override_df = None
-            except Exception as e:
-                logger.warning(f"Error loading override file {override_file}: {e}")
-                override_df = None
-
-        if base_df is None and override_df is None:
-            return {}
-
-        if base_df is None:
-            merged_df = override_df
-        elif override_df is None:
-            merged_df = base_df
-        else:
-            base_df = base_df.set_index('user_id')
-            override_df = override_df.set_index('user_id')
-            merged_df = override_df.combine_first(base_df).reset_index()
-
-        if merged_df is None or 'user_id' not in merged_df.columns or 'name' not in merged_df.columns:
-            return {}
-
-        merged_df = merged_df.dropna(subset=['user_id', 'name'])
-        merged_df['user_id'] = merged_df['user_id'].astype(str).str.strip()
-        merged_df['name'] = merged_df['name'].astype(str).str.strip()
-        return merged_df.set_index('user_id')['name'].to_dict()
-
-    @staticmethod
-    def _sanitize_user_name(name: str) -> str:
-        """Normalize a user name for TSV storage."""
-        if name is None:
-            return 'Unknown'
-        if not isinstance(name, str):
-            name = str(name)
-        return name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').strip()
-
     def _extract_editor_ids(self, pages_df: pd.DataFrame) -> Set[str]:
         """Extract unique editor IDs from updated pages."""
         if 'last_edited_by' not in pages_df.columns:
@@ -366,53 +309,28 @@ class NotionSyncer:
                 continue
             fetched.append({
                 'user_id': user_info['id'],
-                'name': self._sanitize_user_name(user_info.get('name', 'Unknown'))
+                'name': sanitize_user_name(user_info.get('name', 'Unknown'))
             })
         return fetched
 
-    def _append_user_overrides(self, override_file: str, new_users: List[Dict[str, str]], logger) -> None:
-        """Append new user overrides to the configured override file."""
-        if not new_users:
-            return
-
-        existing_ids: Set[str] = set()
-        if os.path.exists(override_file):
-            try:
-                existing_df = pd.read_csv(override_file, sep='\t', dtype=str)
-                if 'user_id' in existing_df.columns:
-                    existing_ids = set(existing_df['user_id'].dropna().astype(str))
-            except Exception as e:
-                logger.warning(f"Error reading override file {override_file}: {e}")
-
-        to_append = [entry for entry in new_users if entry['user_id'] not in existing_ids]
-        if not to_append:
-            return
-
-        override_dir = os.path.dirname(override_file)
-        if override_dir:
-            os.makedirs(override_dir, exist_ok=True)
-
-        write_header = not os.path.exists(override_file) or os.path.getsize(override_file) == 0
-        with open(override_file, 'a', encoding='utf-8') as f:
-            if write_header:
-                f.write("user_id\tname\n")
-            for entry in to_append:
-                f.write(f"{entry['user_id']}\t{entry['name']}\n")
-
-        logger.info(f"Appended {len(to_append)} users to override file {override_file}")
-
     def _ensure_editor_lookup(self, pages_df: pd.DataFrame, logger) -> Dict[str, str]:
         """Ensure editor IDs in updates are available in lookup tables."""
-        user_lookup = self._load_user_lookup(logger)
         editor_ids = self._extract_editor_ids(pages_df)
-        if not editor_ids:
+        return self.ensure_user_ids(editor_ids, logger)
+
+    def ensure_user_ids(self, user_ids: Iterable[str], logger) -> Dict[str, str]:
+        """Ensure the provided user IDs exist in the lookup tables."""
+        userlist_file = self.config.get('paths.userlist_file')
+        override_file = self.config.get('paths.userlist_override_file')
+        user_lookup = load_user_lookup(userlist_file, override_file, logger)
+
+        if not user_ids:
             return user_lookup
 
-        missing_ids = sorted(editor_ids - set(user_lookup.keys()))
+        missing_ids = sorted(set(user_ids) - set(user_lookup.keys()))
         if not missing_ids:
             return user_lookup
 
-        override_file = self.config.get('paths.userlist_override_file')
         if not override_file:
             logger.warning("Unknown editor IDs found but no userlist_override_file configured")
             return user_lookup
@@ -422,8 +340,8 @@ class NotionSyncer:
         if not fetched_users:
             return user_lookup
 
-        self._append_user_overrides(override_file, fetched_users, logger)
-        return self._load_user_lookup(logger)
+        append_user_overrides(override_file, fetched_users, logger)
+        return load_user_lookup(userlist_file, override_file, logger)
 
     def _apply_user_lookup(self, pages_df: pd.DataFrame) -> pd.DataFrame:
         """Replace editor IDs with names when possible."""
