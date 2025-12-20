@@ -53,7 +53,10 @@ Structured output requirements:
    - `"source"`: array of strings identifying the origins of the update. For research note entries, read the `Document ID: <MMDD-n>` bullet and emit `notion:<MMDD-n>`. For Slack inputs, use `slack:` plus the nearest preceding level-3 heading (channel name). For GitLab inputs, use `gitlab:` plus the nearest preceding level-3 heading (project name). Never emit raw UUID values. If no source is available, use `["unknown"]`.
    - `"summary_en"`: Concise English sentence(s) capturing the key updates, risks, and next steps in active voice.
    {language_summary_key_instruction}
-3. Produce one JSON object per thematic cluster or notable change, grouping closely related issues within the same project into a single summarized entry. Ensure all significant updates are included.
+3. **Group by Project Context.**
+   - **Merge** updates from different sources (e.g., Notion planning, Slack discussion, GitLab code) into a single JSON object **if and only if** they refer to the same specific experiment, feature, or project goal.
+   - **Separate** entries if they refer to distinct projects, even if the technical topic is similar.
+   - Ensure the `"source"` array collects ALL unique identifiers (Notion IDs, Slack channels) that contributed to the merged summary.
 4. Keep both summaries strictly factual and aligned in meaning. No additional fields, metadata objects, MVP notes, or decorative content are allowed.
 
 {context_information}
