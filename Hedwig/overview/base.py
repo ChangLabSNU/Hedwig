@@ -134,11 +134,9 @@ class OverviewBase:
     def _get_source_files(self, target_date: date_type) -> Optional[List[Path]]:
         """Return the list of files that feed into downstream overview outputs."""
         indiv_filepath = self._get_individual_summary_path(target_date)
-
-        if not indiv_filepath.exists():
-            return None
-
-        source_files: List[Path] = [indiv_filepath]
+        source_files: List[Path] = []
+        if indiv_filepath.exists():
+            source_files.append(indiv_filepath)
 
         if self.external_content_manager and self.external_content_manager.sources:
             date_str_for_file = target_date.strftime('%Y%m%d')
@@ -153,6 +151,9 @@ class OverviewBase:
                     source_files.append(candidate)
                 elif source.get('required', False):
                     return None
+
+        if not source_files:
+            return None
 
         return source_files
 

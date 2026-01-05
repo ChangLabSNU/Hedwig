@@ -92,8 +92,8 @@ class MessageManager:
                 markdown_content = f.read()
             self.logger.info(f"Read markdown file: {markdown_file}")
         except FileNotFoundError:
-            self.logger.error(f"Markdown file not found: {markdown_file}")
-            raise
+            self.logger.info(f"Markdown file not found: {markdown_file}")
+            markdown_content = ''
 
         # Read notification message
         try:
