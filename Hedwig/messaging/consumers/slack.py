@@ -124,7 +124,7 @@ class SlackConsumer(MessageConsumer):
             return None
 
         if doc_url:
-            link_text = f"\n<{doc_url}|View Canvas>"
+            link_text = f"\n<{doc_url}|View Timeline>"
         else:
             link_text = f"\n(Canvas created, ID: {doc_id})"
 
