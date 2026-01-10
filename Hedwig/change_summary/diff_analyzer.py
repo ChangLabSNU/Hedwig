@@ -28,6 +28,7 @@ from pathlib import Path
 
 from ..utils.logging import setup_logger
 from ..utils.timezone import TimezoneManager
+from ..utils.userlist import resolve_user_name
 
 
 class DiffAnalyzer:
@@ -158,13 +159,7 @@ class DiffAnalyzer:
 
                         # Replace UUID with real name for "Last Edited By" field
                         if key == 'Last Edited By':
-                            if value in self.user_lookup:
-                                value = self.user_lookup[value]
-                            elif self.unknown_user_callback:
-                                # Call callback for unknown user
-                                result = self.unknown_user_callback(value)
-                                if result:
-                                    value = result
+                            value = resolve_user_name(value, self.user_lookup, self.unknown_user_callback)
 
                         header[key] = value
 
@@ -266,13 +261,7 @@ class DiffAnalyzer:
                     if line.startswith('- Last Edited By:'):
                         editor_id = line.split(':', 1)[1].strip()
                         if editor_id:
-                            if editor_id in self.user_lookup:
-                                editor_name = self.user_lookup[editor_id]
-                            elif self.unknown_user_callback:
-                                result = self.unknown_user_callback(editor_id)
-                                editor_name = result if result else editor_id
-                            else:
-                                editor_name = editor_id
+                            editor_name = resolve_user_name(editor_id, self.user_lookup, self.unknown_user_callback)
 
                             if editor_name not in editors:
                                 editors.append(editor_name)

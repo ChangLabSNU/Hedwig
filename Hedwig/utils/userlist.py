@@ -21,8 +21,9 @@
 
 """User list utilities for lookup and override handling."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterable, Set, Mapping, Callable
 import os
+import uuid
 
 import pandas as pd
 
@@ -34,6 +35,51 @@ def sanitize_user_name(name: str) -> str:
     if not isinstance(name, str):
         name = str(name)
     return name.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').strip()
+
+
+def normalize_notion_user_id(value: object) -> Optional[str]:
+    """Normalize a Notion user ID to a canonical UUID string.
+
+    Returns None when the value doesn't look like a UUID.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except Exception:
+        return None
+
+
+def normalize_notion_user_ids(values: Iterable[object]) -> Set[str]:
+    """Normalize an iterable of user IDs and drop invalid entries."""
+    return {uid for uid in (normalize_notion_user_id(v) for v in values) if uid}
+
+
+def resolve_user_name(
+    value: str,
+    user_lookup: Mapping[str, str],
+    unknown_user_callback: Optional[Callable[[str], Optional[str]]] = None,
+) -> str:
+    """Resolve a Notion user ID to a display name when possible.
+
+    If `value` isn't a UUID-like string, it is returned unchanged.
+    """
+    normalized_id = normalize_notion_user_id(value)
+    if not normalized_id:
+        return value
+    resolved = user_lookup.get(normalized_id)
+    if resolved:
+        return resolved
+    if unknown_user_callback:
+        fetched = unknown_user_callback(normalized_id)
+        if fetched:
+            return fetched
+    return value
 
 
 def _log(logger, level: str, message: str) -> None:
@@ -99,7 +145,12 @@ def load_user_lookup(
         return {}
 
     merged_df = merged_df.dropna(subset=['user_id', 'name'])
-    merged_df['user_id'] = merged_df['user_id'].astype(str).str.strip()
+    merged_df['user_id'] = (
+        merged_df['user_id']
+        .astype(str)
+        .map(normalize_notion_user_id)
+    )
+    merged_df = merged_df.dropna(subset=['user_id'])
     merged_df['name'] = merged_df['name'].astype(str).str.strip()
     return merged_df.set_index('user_id')['name'].to_dict()
 
@@ -118,18 +169,23 @@ def append_user_overrides(
         try:
             existing_df = pd.read_csv(override_file, sep='\t', dtype=str)
             if 'user_id' in existing_df.columns:
-                existing_ids = set(existing_df['user_id'].dropna().astype(str))
+                existing_ids = {
+                    uid
+                    for uid in existing_df['user_id'].dropna().astype(str).map(normalize_notion_user_id)
+                    if uid
+                }
         except Exception as e:
             _log(logger, 'warning', f"Error reading override file {override_file}: {e}")
 
-    to_append = [
-        {
-            'user_id': entry['user_id'],
+    to_append: List[Dict[str, str]] = []
+    for entry in new_users:
+        user_id = normalize_notion_user_id(entry.get('user_id'))
+        if not user_id or user_id in existing_ids:
+            continue
+        to_append.append({
+            'user_id': user_id,
             'name': sanitize_user_name(entry.get('name', 'Unknown'))
-        }
-        for entry in new_users
-        if entry.get('user_id') and entry['user_id'] not in existing_ids
-    ]
+        })
     if not to_append:
         return 0
 

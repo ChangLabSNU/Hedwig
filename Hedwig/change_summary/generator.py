@@ -175,11 +175,11 @@ Format the summary as follows:
             self.logger.info(f"Loaded {len(user_lookup)} users from {source_label}")
         return user_lookup
 
-    def _handle_unknown_user(self, user_id: str) -> Optional[str]:
+    def _handle_unknown_user(self, user_uuid: str) -> Optional[str]:
         """Handle unknown user ID by syncing user list once
 
         Args:
-            user_id: User ID not found in lookup table
+            user_uuid: Notion user UUID not found in lookup table
 
         Returns:
             User name if found after sync, None otherwise
@@ -189,26 +189,26 @@ Format the summary as follows:
             return None
 
         # Check if this user is already in our lookup (might have been loaded after previous metadata extraction)
-        if user_id in self.user_lookup:
-            return self.user_lookup[user_id]
+        if user_uuid in self.user_lookup:
+            return self.user_lookup[user_uuid]
 
-        self.logger.info(f"Unknown user ID '{user_id}' found, resolving user details...")
+        self.logger.info(f"Unknown user ID '{user_uuid}' found, resolving user details...")
         self.has_synced = True
 
         try:
             # Ensure user IDs are populated in the override file, then reload
             from ..notion.sync import NotionSyncer
             syncer = NotionSyncer(config_path=self.config.config_path)
-            new_lookup = syncer.ensure_user_ids([user_id], self.logger)
+            new_lookup = syncer.ensure_user_ids([user_uuid], self.logger)
             if new_lookup:
                 self.user_lookup = new_lookup
                 self.diff_analyzer.user_lookup = new_lookup
 
-                if user_id in new_lookup:
-                    self.logger.info(f"User '{user_id}' found after sync: {new_lookup[user_id]}")
-                    return new_lookup[user_id]
+                if user_uuid in new_lookup:
+                    self.logger.info(f"User '{user_uuid}' found after sync: {new_lookup[user_uuid]}")
+                    return new_lookup[user_uuid]
                 else:
-                    self.logger.warning(f"User '{user_id}' still not found after sync")
+                    self.logger.warning(f"User '{user_uuid}' still not found after sync")
         except Exception as e:
             self.logger.error(f"Failed to sync user list: {e}")
 

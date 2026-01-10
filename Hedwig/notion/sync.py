@@ -33,7 +33,12 @@ from ..utils.config import Config
 from ..utils.logging import setup_logger
 from ..utils.git import GitManager
 from ..utils.timezone import TimezoneManager
-from ..utils.userlist import load_user_lookup, append_user_overrides, sanitize_user_name
+from ..utils.userlist import (
+    load_user_lookup,
+    append_user_overrides,
+    sanitize_user_name,
+    normalize_notion_user_ids,
+)
 from .client import NotionClient
 from .exporter import MarkdownExporter
 
@@ -327,7 +332,11 @@ class NotionSyncer:
         if not user_ids:
             return user_lookup
 
-        missing_ids = sorted(set(user_ids) - set(user_lookup.keys()))
+        normalized_ids = normalize_notion_user_ids(user_ids)
+        if not normalized_ids:
+            return user_lookup
+
+        missing_ids = sorted(normalized_ids - set(user_lookup.keys()))
         if not missing_ids:
             return user_lookup
 
